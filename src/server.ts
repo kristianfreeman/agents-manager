@@ -1,7 +1,5 @@
 import { routeAgentRequest, type Schedule } from "agents";
-
 import { getSchedulePrompt } from "agents/schedule";
-
 import { AIChatAgent } from "agents/ai-chat-agent";
 import {
   generateId,
@@ -30,16 +28,112 @@ const model = openai("gpt-4o-2024-11-20");
  */
 export class Chat extends AIChatAgent<Env> {
   /**
+   * Handle HTTP requests for MCP server management and other agent operations
+   */
+  async onRequest(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Get MCP servers state
+    if (url.pathname.endsWith("/mcp-servers") && request.method === "GET") {
+      const mcpState = this.getMcpServers();
+      return new Response(JSON.stringify(mcpState, null, 2), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Add MCP server
+    if (url.pathname.endsWith("/mcp-servers") && request.method === "POST") {
+      const { serverUrl, name, authToken } = (await request.json()) as {
+        serverUrl: string;
+        name: string;
+        authToken?: string;
+      };
+
+      console.log(`[MCP] Connecting to ${name} at ${serverUrl}`);
+      console.log(`[MCP] Auth token provided: ${authToken ? "YES (length: " + authToken.length + ")" : "NO"}`);
+
+      // If authToken provided, use it in headers (for PAT-based auth)
+      const options = authToken
+        ? {
+            transport: {
+              headers: {
+                Authorization: `Bearer ${authToken}`
+              }
+            }
+          }
+        : undefined;
+
+      console.log(`[MCP] Options:`, JSON.stringify(options, null, 2));
+
+      try {
+        const { id, authUrl } = await this.addMcpServer(
+          name,
+          serverUrl,
+          undefined,
+          undefined,
+          options
+        );
+
+        console.log(`[MCP] Connection result - ID: ${id}, authUrl: ${authUrl || "none"}`);
+
+        if (authUrl) {
+          return new Response(
+            JSON.stringify({ serverId: id, authUrl }),
+            { headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ serverId: id, status: "connected" }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error(`[MCP] Failed to connect to ${name}:`, error);
+        return new Response(
+          JSON.stringify({
+            error: error instanceof Error ? error.message : String(error)
+          }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // Remove MCP server
+    if (
+      url.pathname.match(/\/mcp-servers\/(.+)$/) &&
+      request.method === "DELETE"
+    ) {
+      const serverId = url.pathname.split("/").pop()!;
+      await this.removeMcpServer(serverId);
+      return new Response(JSON.stringify({ status: "removed" }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Get assigned tasks from Linear MCP
+    if (url.pathname.endsWith("/tasks") && request.method === "GET") {
+      // TODO: Query Linear MCP for tasks assigned to user
+      // For now, return empty array until Linear MCP is connected
+      return new Response(JSON.stringify([]), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Let base class handle other requests (chat, websocket, etc.)
+    const response = await super.onRequest?.(request);
+    if (!response) {
+      return new Response("Not Found", { status: 404 });
+    }
+    return response;
+  }
+
+  /**
    * Handles incoming chat messages and manages the response stream
    */
   async onChatMessage(
     onFinish: StreamTextOnFinishCallback<ToolSet>,
     _options?: { abortSignal?: AbortSignal }
   ) {
-    // const mcpConnection = await this.mcp.connect(
-    //   "https://path-to-mcp-server/sse"
-    // );
-
     // Collect all tools, including MCP tools
     const allTools = {
       ...tools,
@@ -118,15 +212,31 @@ export default {
         success: hasOpenAIKey
       });
     }
+
+    // Debug: Check which bindings are available
+    if (url.pathname === "/debug-bindings") {
+      return Response.json({
+        hasChat: !!env.Chat,
+        hasTaskManager: !!env.TaskManager,
+        hasASSETS: !!env.ASSETS,
+        hasAI: !!env.AI,
+        envKeys: Object.keys(env)
+      });
+    }
+
     if (!process.env.OPENAI_API_KEY) {
       console.error(
         "OPENAI_API_KEY is not set, don't forget to set it locally in .dev.vars, and use `wrangler secret bulk .dev.vars` to upload it to production"
       );
     }
-    return (
-      // Route the request to our agent or return 404 if not found
-      (await routeAgentRequest(request, env)) ||
-      new Response("Not found", { status: 404 })
-    );
+
+    // Try to route to agent first
+    const agentResponse = await routeAgentRequest(request, env);
+    if (agentResponse) {
+      return agentResponse;
+    }
+
+    // Fall back to static assets (SPA mode handles 404s)
+    return env.ASSETS.fetch(request);
   }
 } satisfies ExportedHandler<Env>;

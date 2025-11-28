@@ -15,7 +15,9 @@
 		"remote": true
 	},
 	"assets": {
-		"directory": "public"
+		"directory": "public",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
 	},
 	"durable_objects": {
 		"bindings": [

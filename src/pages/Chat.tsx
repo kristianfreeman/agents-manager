@@ -4,7 +4,7 @@ import { useAgent } from "agents/react";
 import { isToolUIPart } from "ai";
 import { useAgentChat } from "agents/ai-react";
 import type { UIMessage } from "@ai-sdk/react";
-import type { tools } from "./tools";
+import type { tools } from "@/tools";
 
 // Component imports
 import { Button } from "@/components/button/Button";
