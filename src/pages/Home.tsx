@@ -134,20 +134,16 @@ export default function Home() {
             ) : (
               <div className="space-y-2">
                 {myTasks.map((task) => (
-                  <div
+                  <Link
                     key={task.id}
-                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
+                    to={`/${task.id}`}
+                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-850 transition-colors cursor-pointer block"
                   >
                     <h3 className="font-medium">{task.title}</h3>
-                    <a
-                      href={task.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#F48120] hover:underline text-sm whitespace-nowrap ml-4"
-                    >
+                    <span className="text-[#F48120] text-sm whitespace-nowrap ml-4">
                       View →
-                    </a>
-                  </div>
+                    </span>
+                  </Link>
                 ))}
               </div>
             )}

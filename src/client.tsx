@@ -5,6 +5,7 @@ import { Providers } from "@/providers";
 import Home from "@/pages/Home";
 import Chat from "@/pages/Chat";
 import Setup from "@/pages/Setup";
+import Task from "@/pages/Task";
 
 const root = createRoot(document.getElementById("app")!);
 
@@ -16,6 +17,7 @@ root.render(
           <Route path="/" element={<Home />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/setup" element={<Setup />} />
+          <Route path="/:id" element={<Task />} />
         </Routes>
       </div>
     </Providers>
