@@ -168,11 +168,13 @@ export class Chat extends AIChatAgent<Env> {
         }
 
         // Query Linear MCP for issues assigned to the current user
-        const result = await tool.execute({
+        const filterParams = {
           filter: {
             assignee: { id: { eq: "me" } }
           }
-        });
+        };
+        console.log("[Linear] Filter params for my-tasks:", JSON.stringify(filterParams, null, 2));
+        const result = await tool.execute(filterParams);
 
         console.log("[Linear] Raw MCP response:", JSON.stringify(result, null, 2));
 
@@ -191,8 +193,13 @@ export class Chat extends AIChatAgent<Env> {
           }
         }
 
+        // Filter client-side for issues that actually have an assignee
+        // (Linear MCP server doesn't respect the assignee filter)
+        const assignedIssues = issues.filter((issue: any) => issue.assigneeId);
+        console.log("[Linear] Filtered to assigned issues:", assignedIssues.length);
+
         // Transform Linear issues to our task format
-        const tasks = issues.map((issue: any) => ({
+        const tasks = assignedIssues.map((issue: any) => ({
           id: issue.id,
           title: issue.title,
           description: issue.description,
