@@ -112,11 +112,83 @@ export class Chat extends AIChatAgent<Env> {
 
     // Get assigned tasks from Linear MCP
     if (url.pathname.endsWith("/tasks") && request.method === "GET") {
-      // TODO: Query Linear MCP for tasks assigned to user
-      // For now, return empty array until Linear MCP is connected
-      return new Response(JSON.stringify([]), {
-        headers: { "Content-Type": "application/json" }
-      });
+      try {
+        // Check MCP server state
+        const mcpState = this.getMcpServers();
+        console.log("[Linear] MCP State:", JSON.stringify(mcpState, null, 2));
+
+        // Find Linear server
+        const servers = mcpState.servers || {};
+        const linearServer = Object.values(servers).find(
+          (s: any) => s.name === "Linear"
+        );
+
+        if (!linearServer) {
+          console.log("[Linear] Linear server not connected");
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        console.log("[Linear] Server state:", (linearServer as any).state);
+
+        // If server is not ready yet, return empty array
+        if ((linearServer as any).state !== "ready") {
+          console.log("[Linear] Server not ready yet, state:", (linearServer as any).state);
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const tools = this.mcp.getAITools();
+        const toolNames = Object.keys(tools);
+        console.log("[Linear] Available MCP tools:", toolNames);
+
+        // Find the Linear issues list tool
+        const issuesListTool = toolNames.find(name =>
+          name.includes('linear') && (name.includes('issues') || name.includes('issue')) && name.includes('list')
+        );
+
+        if (!issuesListTool) {
+          console.error("[Linear] No issues list tool found. Available tools:", toolNames);
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        console.log("[Linear] Using tool:", issuesListTool);
+
+        // Query Linear MCP for issues assigned to the current user
+        const result = await this.mcp.callTool(issuesListTool, {
+          filter: {
+            assignee: { id: { eq: "me" } },
+            state: { type: { in: ["started", "unstarted"] } }
+          }
+        });
+
+        console.log("[Linear] Raw MCP response:", JSON.stringify(result, null, 2));
+
+        // Transform Linear issues to our task format
+        const issues = result.issues || [];
+        const tasks = issues.map((issue: any) => ({
+          id: issue.id,
+          title: issue.title,
+          description: issue.description,
+          url: issue.url,
+          claimedAt: issue.createdAt,
+          researchStatus: "pending" as const
+        }));
+
+        return new Response(JSON.stringify(tasks), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        console.error("[Linear] Failed to fetch tasks:", error);
+        // Return empty array on error rather than failing
+        return new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
     // Let base class handle other requests (chat, websocket, etc.)

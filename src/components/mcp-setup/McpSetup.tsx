@@ -178,6 +178,10 @@ export function McpSetup({ agentId }: McpSetupProps) {
   // Ensure servers is an array
   const serverList = Array.isArray(servers) ? servers : [];
 
+  const capitalizeState = (state: string) => {
+    return state.charAt(0).toUpperCase() + state.slice(1);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -188,199 +192,180 @@ export function McpSetup({ agentId }: McpSetupProps) {
         </p>
       </div>
 
-      {serverList.length === 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold">Authentication Tokens</h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Enter your API tokens to connect to MCP servers
-          </p>
-          <div className="grid gap-4">
-            {!serverList.find(s => s.name === "GitHub") && (
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  GitHub Personal Access Token
-                </label>
-                <input
-                  type="password"
-                  value={githubToken}
-                  onChange={(e) => setGithubToken(e.target.value)}
-                  placeholder="ghp_..."
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-md bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
-                />
-                <p className="text-xs text-neutral-500 mt-1">
-                  Create a token at{" "}
-                  <a
-                    href="https://github.com/settings/tokens"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#F48120] hover:underline"
-                  >
-                    github.com/settings/tokens
-                  </a>
-                </p>
-              </div>
-            )}
-            {!serverList.find(s => s.name === "Linear") && (
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Linear API Key
-                </label>
-                <input
-                  type="password"
-                  value={linearToken}
-                  onChange={(e) => setLinearToken(e.target.value)}
-                  placeholder="lin_api_..."
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-md bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
-                />
-                <p className="text-xs text-neutral-500 mt-1">
-                  Create an API key at{" "}
-                  <a
-                    href="https://linear.app/settings/api"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#F48120] hover:underline"
-                  >
-                    linear.app/settings/api
-                  </a>
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Available Servers</h3>
+        <h3 className="text-lg font-semibold">Servers</h3>
         {predefinedServers.map((server) => {
           const connected = serverList.find((s) => s.name === server.name);
           const isConnecting = connecting === server.name;
           const isHovered = hoveredServer === server.name;
+          const needsToken = !connected;
 
-          const capitalizeState = (state: string) => {
-            return state.charAt(0).toUpperCase() + state.slice(1);
+          // State machine for button appearance
+          type ButtonState =
+            | { type: 'disconnected' }
+            | { type: 'connecting' }
+            | { type: 'ready' }
+            | { type: 'ready-hovered' }
+            | { type: 'failed' }
+            | { type: 'in-progress' };
+
+          const getButtonState = (): ButtonState => {
+            if (isConnecting) return { type: 'connecting' };
+            if (!connected) return { type: 'disconnected' };
+            if (connected.state === 'ready' && isHovered) return { type: 'ready-hovered' };
+            if (connected.state === 'ready') return { type: 'ready' };
+            if (connected.state === 'failed') return { type: 'failed' };
+            return { type: 'in-progress' };
           };
 
-          const getButtonText = () => {
-            if (isConnecting) return "Connecting...";
-            if (!connected) return "Connect";
-            if (isHovered) return "Disconnect";
-            return capitalizeState(connected.state || "connected");
+          const buttonState = getButtonState();
+
+          const getButtonProps = (state: ButtonState) => {
+            switch (state.type) {
+              case 'disconnected':
+                return {
+                  text: 'Connect',
+                  variant: 'secondary' as const,
+                  className: ''
+                };
+              case 'connecting':
+                return {
+                  text: 'Connecting...',
+                  variant: 'secondary' as const,
+                  className: ''
+                };
+              case 'ready':
+                return {
+                  text: 'Ready',
+                  variant: 'secondary' as const,
+                  className: '!text-green-600 dark:!text-green-400'
+                };
+              case 'ready-hovered':
+                return {
+                  text: 'Disconnect',
+                  variant: 'secondary' as const,
+                  className: '!bg-red-600 hover:!bg-red-700 !text-white !border-red-600'
+                };
+              case 'failed':
+                return {
+                  text: 'Failed',
+                  variant: 'destructive' as const,
+                  className: ''
+                };
+              case 'in-progress':
+                return {
+                  text: capitalizeState(connected?.state || 'connecting'),
+                  variant: 'secondary' as const,
+                  className: ''
+                };
+            }
           };
 
-          const getButtonVariant = () => {
-            if (isConnecting) return "primary";
-            if (!connected) return "primary";
-            if (isHovered) return "destructive";
+          const buttonProps = getButtonProps(buttonState);
 
-            // Color based on state
+          const getStateColor = () => {
+            if (!connected) return "";
             switch (connected.state) {
               case "ready":
-                return "secondary"; // Green/success look
+                return "text-green-600 dark:text-green-400";
               case "failed":
-                return "destructive";
+                return "text-red-600 dark:text-red-400";
               case "connecting":
               case "authenticating":
               case "discovering":
-                return "primary";
+                return "text-yellow-600 dark:text-yellow-400";
               default:
-                return "secondary";
+                return "text-neutral-600 dark:text-neutral-400";
             }
           };
 
           return (
             <Card key={server.name} className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h4 className="font-semibold">{server.name}</h4>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-                    {server.description}
-                  </p>
-                  {connected?.tools && connected.tools.length > 0 && (
-                    <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-2">
-                      {connected.tools.length} tools available
+              <div className="space-y-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold">{server.name}</h4>
+                      {connected && (
+                        <span className={`text-sm ${getStateColor()}`}>
+                          • {capitalizeState(connected.state)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+                      {server.description}
                     </p>
-                  )}
+                    {connected?.tools && connected.tools.length > 0 && (
+                      <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-2">
+                        {connected.tools.length} tools available
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={buttonProps.variant}
+                      className={buttonProps.className}
+                      onClick={() =>
+                        connected
+                          ? disconnectServer(connected.id)
+                          : connectServer(server.name, server.url)
+                      }
+                      onMouseEnter={() => setHoveredServer(server.name)}
+                      onMouseLeave={() => setHoveredServer(null)}
+                      disabled={isConnecting}
+                    >
+                      {buttonProps.text}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant={getButtonVariant()}
-                    className={
-                      !connected && !isConnecting
-                        ? "bg-[#F48120] hover:bg-[#F48120]/90 text-white border-[#F48120]"
-                        : connected?.state === "ready" && !isHovered
-                          ? "bg-green-600 hover:bg-green-700 text-white border-green-600"
-                          : ""
-                    }
-                    onClick={() =>
-                      connected
-                        ? disconnectServer(connected.id)
-                        : connectServer(server.name, server.url)
-                    }
-                    onMouseEnter={() => setHoveredServer(server.name)}
-                    onMouseLeave={() => setHoveredServer(null)}
-                    disabled={isConnecting}
-                  >
-                    {getButtonText()}
-                  </Button>
-                </div>
+
+                {needsToken && (
+                  <div className="pt-2">
+                    <label className="block text-sm font-medium mb-1">
+                      {server.name === "GitHub"
+                        ? "GitHub Personal Access Token"
+                        : "Linear API Key"}
+                    </label>
+                    <input
+                      type="password"
+                      value={
+                        server.name === "GitHub" ? githubToken : linearToken
+                      }
+                      onChange={(e) =>
+                        server.name === "GitHub"
+                          ? setGithubToken(e.target.value)
+                          : setLinearToken(e.target.value)
+                      }
+                      placeholder={
+                        server.name === "GitHub" ? "ghp_..." : "lin_api_..."
+                      }
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-md bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                    />
+                    <p className="text-xs text-neutral-500 mt-1">
+                      Create a token at{" "}
+                      <a
+                        href={
+                          server.name === "GitHub"
+                            ? "https://github.com/settings/tokens"
+                            : "https://linear.app/settings/api"
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#F48120] hover:underline"
+                      >
+                        {server.name === "GitHub"
+                          ? "github.com/settings/tokens"
+                          : "linear.app/settings/api"}
+                      </a>
+                    </p>
+                  </div>
+                )}
               </div>
             </Card>
           );
         })}
       </div>
-
-      {serverList.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold">Connected Servers</h3>
-          {serverList.map((server) => (
-            <Card key={server.id} className="p-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-semibold">{server.name}</h4>
-                  <span
-                    className={`px-2 py-0.5 text-xs rounded-full ${
-                      server.state === "ready"
-                        ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                        : server.state === "failed"
-                          ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                          : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                    }`}
-                  >
-                    {server.state}
-                  </span>
-                </div>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                  {server.url}
-                </p>
-                {server.tools && server.tools.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-sm font-medium mb-1">
-                      Available Tools ({server.tools.length}):
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {server.tools.slice(0, 5).map((tool) => (
-                        <span
-                          key={tool.name}
-                          className="px-2 py-0.5 text-xs bg-neutral-100 dark:bg-neutral-800 rounded"
-                          title={tool.description}
-                        >
-                          {tool.name}
-                        </span>
-                      ))}
-                      {server.tools.length > 5 && (
-                        <span className="px-2 py-0.5 text-xs text-neutral-500">
-                          +{server.tools.length - 5} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
