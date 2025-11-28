@@ -17,7 +17,8 @@ interface McpServer {
 }
 
 export default function Home() {
-  const [tasks, setTasks] = useState<ClaimedTask[]>([]);
+  const [myTasks, setMyTasks] = useState<ClaimedTask[]>([]);
+  const [allTasks, setAllTasks] = useState<ClaimedTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [linearConnected, setLinearConnected] = useState(false);
 
@@ -26,7 +27,7 @@ export default function Home() {
   }, []);
 
   const fetchData = async () => {
-    await Promise.all([fetchTasks(), checkLinearConnection()]);
+    await Promise.all([fetchMyTasks(), fetchAllTasks(), checkLinearConnection()]);
   };
 
   const checkLinearConnection = async () => {
@@ -59,16 +60,27 @@ export default function Home() {
     }
   };
 
-  const fetchTasks = async () => {
+  const fetchMyTasks = async () => {
     try {
-      // Fetch tasks from Chat agent which queries Linear MCP
+      const response = await fetch("/agents/chat/default/my-tasks");
+      if (response.ok) {
+        const data = (await response.json()) as ClaimedTask[];
+        setMyTasks(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch my tasks:", error);
+    }
+  };
+
+  const fetchAllTasks = async () => {
+    try {
       const response = await fetch("/agents/chat/default/tasks");
       if (response.ok) {
         const data = (await response.json()) as ClaimedTask[];
-        setTasks(data);
+        setAllTasks(data);
       }
     } catch (error) {
-      console.error("Failed to fetch tasks:", error);
+      console.error("Failed to fetch all tasks:", error);
     } finally {
       setLoading(false);
     }
@@ -101,16 +113,17 @@ export default function Home() {
         </div>
 
         <div className="grid gap-6">
+          {/* My Tasks Section */}
           <div>
-            <h2 className="text-2xl font-semibold mb-4">Your Tasks</h2>
+            <h2 className="text-2xl font-semibold mb-4">My Tasks</h2>
             {loading ? (
               <div className="text-center py-12 text-neutral-600 dark:text-neutral-400">
                 Loading tasks...
               </div>
-            ) : tasks.length === 0 ? (
+            ) : myTasks.length === 0 ? (
               <div className="text-center py-12 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
                 <p className="text-neutral-600 dark:text-neutral-400 mb-4">
-                  No tasks claimed yet
+                  No tasks assigned to you
                 </p>
                 <p className="text-sm text-neutral-500 dark:text-neutral-500">
                   {linearConnected
@@ -119,48 +132,56 @@ export default function Home() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {tasks.map((task) => (
+              <div className="space-y-2">
+                {myTasks.map((task) => (
                   <div
                     key={task.id}
-                    className="bg-white dark:bg-neutral-900 p-4 rounded-lg border border-neutral-200 dark:border-neutral-800"
+                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-semibold mb-1">{task.title}</h3>
-                        {task.description && (
-                          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-2">
-                            {task.description}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-neutral-500">
-                            Claimed {new Date(task.claimedAt).toLocaleDateString()}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 text-xs rounded-full ${
-                              task.researchStatus === "completed"
-                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                : task.researchStatus === "failed"
-                                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                                  : task.researchStatus === "in_progress"
-                                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                                    : "bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-200"
-                            }`}
-                          >
-                            {task.researchStatus}
-                          </span>
-                        </div>
-                      </div>
-                      <a
-                        href={task.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[#F48120] hover:underline text-sm"
-                      >
-                        View in Linear →
-                      </a>
-                    </div>
+                    <h3 className="font-medium">{task.title}</h3>
+                    <a
+                      href={task.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#F48120] hover:underline text-sm whitespace-nowrap ml-4"
+                    >
+                      View →
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* All Tasks Section */}
+          <div>
+            <h2 className="text-2xl font-semibold mb-4">All Tasks</h2>
+            {loading ? (
+              <div className="text-center py-12 text-neutral-600 dark:text-neutral-400">
+                Loading tasks...
+              </div>
+            ) : allTasks.length === 0 ? (
+              <div className="text-center py-12 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
+                <p className="text-neutral-600 dark:text-neutral-400">
+                  No tasks available
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {allTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
+                  >
+                    <h3 className="font-medium">{task.title}</h3>
+                    <a
+                      href={task.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#F48120] hover:underline text-sm whitespace-nowrap ml-4"
+                    >
+                      View →
+                    </a>
                   </div>
                 ))}
               </div>

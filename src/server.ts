@@ -110,7 +110,110 @@ export class Chat extends AIChatAgent<Env> {
       });
     }
 
-    // Get assigned tasks from Linear MCP
+    // Get my assigned tasks from Linear MCP
+    if (url.pathname.endsWith("/my-tasks") && request.method === "GET") {
+      try {
+        // Check MCP server state
+        const mcpState = this.getMcpServers();
+        console.log("[Linear] MCP State:", JSON.stringify(mcpState, null, 2));
+
+        // Find Linear server
+        const servers = mcpState.servers || {};
+        const linearServer = Object.values(servers).find(
+          (s: any) => s.name === "Linear"
+        );
+
+        if (!linearServer) {
+          console.log("[Linear] Linear server not connected");
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        console.log("[Linear] Server state:", (linearServer as any).state);
+
+        // If server is not ready yet, return empty array
+        if ((linearServer as any).state !== "ready") {
+          console.log("[Linear] Server not ready yet, state:", (linearServer as any).state);
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const tools = this.mcp.getAITools();
+        const toolNames = Object.keys(tools);
+        console.log("[Linear] Available MCP tools:", toolNames);
+
+        // Find the Linear issues list tool - it has format: tool_{serverId}_list_issues
+        const issuesListTool = toolNames.find(name =>
+          name.includes('list_issues')
+        );
+
+        if (!issuesListTool) {
+          console.error("[Linear] No issues list tool found. Available tools:", toolNames);
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        console.log("[Linear] Using tool:", issuesListTool);
+
+        // Get the actual tool object and execute it directly
+        const tool = tools[issuesListTool];
+        if (!tool || !tool.execute) {
+          console.error("[Linear] Tool doesn't have execute function");
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Query Linear MCP for issues assigned to the current user
+        const result = await tool.execute({
+          filter: {
+            assignee: { id: { eq: "me" } }
+          }
+        });
+
+        console.log("[Linear] Raw MCP response:", JSON.stringify(result, null, 2));
+
+        // MCP tools return results in content array format
+        // Parse the actual data from the text content
+        let issues = [];
+        if ((result as any).content && Array.isArray((result as any).content)) {
+          const textContent = (result as any).content.find((c: any) => c.type === 'text');
+          if (textContent && textContent.text) {
+            try {
+              issues = JSON.parse(textContent.text);
+              console.log("[Linear] Parsed my issues:", issues.length);
+            } catch (e) {
+              console.error("[Linear] Failed to parse issues JSON:", e);
+            }
+          }
+        }
+
+        // Transform Linear issues to our task format
+        const tasks = issues.map((issue: any) => ({
+          id: issue.id,
+          title: issue.title,
+          description: issue.description,
+          url: issue.url,
+          claimedAt: issue.createdAt,
+          researchStatus: "pending" as const
+        }));
+
+        return new Response(JSON.stringify(tasks), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        console.error("[Linear] Failed to fetch my tasks:", error);
+        // Return empty array on error rather than failing
+        return new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // Get all tasks from Linear MCP
     if (url.pathname.endsWith("/tasks") && request.method === "GET") {
       try {
         // Check MCP server state
@@ -144,9 +247,9 @@ export class Chat extends AIChatAgent<Env> {
         const toolNames = Object.keys(tools);
         console.log("[Linear] Available MCP tools:", toolNames);
 
-        // Find the Linear issues list tool
+        // Find the Linear issues list tool - it has format: tool_{serverId}_list_issues
         const issuesListTool = toolNames.find(name =>
-          name.includes('linear') && (name.includes('issues') || name.includes('issue')) && name.includes('list')
+          name.includes('list_issues')
         );
 
         if (!issuesListTool) {
@@ -158,18 +261,40 @@ export class Chat extends AIChatAgent<Env> {
 
         console.log("[Linear] Using tool:", issuesListTool);
 
-        // Query Linear MCP for issues assigned to the current user
-        const result = await this.mcp.callTool(issuesListTool, {
+        // Get the actual tool object and execute it directly
+        const tool = tools[issuesListTool];
+        if (!tool || !tool.execute) {
+          console.error("[Linear] Tool doesn't have execute function");
+          return new Response(JSON.stringify([]), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Query Linear MCP for all issues (no assignee filter)
+        const result = await tool.execute({
           filter: {
-            assignee: { id: { eq: "me" } },
-            state: { type: { in: ["started", "unstarted"] } }
+            state: { type: { in: ["started", "unstarted", "backlog"] } }
           }
         });
 
         console.log("[Linear] Raw MCP response:", JSON.stringify(result, null, 2));
 
+        // MCP tools return results in content array format
+        // Parse the actual data from the text content
+        let issues = [];
+        if ((result as any).content && Array.isArray((result as any).content)) {
+          const textContent = (result as any).content.find((c: any) => c.type === 'text');
+          if (textContent && textContent.text) {
+            try {
+              issues = JSON.parse(textContent.text);
+              console.log("[Linear] Parsed issues:", issues.length);
+            } catch (e) {
+              console.error("[Linear] Failed to parse issues JSON:", e);
+            }
+          }
+        }
+
         // Transform Linear issues to our task format
-        const issues = result.issues || [];
         const tasks = issues.map((issue: any) => ({
           id: issue.id,
           title: issue.title,
