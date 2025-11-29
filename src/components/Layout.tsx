@@ -45,9 +45,17 @@ export default function Layout() {
   const [showDebug, setShowDebug] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState("auto");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      // Use requestAnimationFrame to ensure DOM is updated before scrolling
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
+      });
+    }
   }, []);
 
   // Theme effect
@@ -110,6 +118,11 @@ export default function Layout() {
   } = useAgentChat<unknown, UIMessage<{ createdAt: string }>>({
     agent
   });
+
+  // Scroll to bottom on mount
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -189,7 +202,7 @@ export default function Layout() {
         {/* Chat Area (2/3) */}
         <div className="flex-[2] flex flex-col border-r border-neutral-200 dark:border-neutral-800 relative">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 pb-40">
             {agentMessages.length === 0 && (
               <div className="h-full flex items-center justify-center">
                 <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900">
