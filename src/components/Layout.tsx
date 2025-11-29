@@ -15,6 +15,7 @@ import { Toggle } from "@/components/toggle/Toggle";
 import { Textarea } from "@/components/textarea/Textarea";
 import { MemoizedMarkdown } from "@/components/memoized-markdown";
 import { ToolInvocationCard } from "@/components/tool-invocation-card/ToolInvocationCard";
+import { RepositorySelector } from "@/components/repository-selector/RepositorySelector";
 
 // Icon imports
 import {
@@ -29,16 +30,36 @@ import {
   Kanban
 } from "@phosphor-icons/react";
 
+interface Repository {
+  id: string;
+  name: string;
+  full_name: string;
+  owner: {
+    login: string;
+  };
+  description?: string;
+  private: boolean;
+}
+
 // List of tools that require human confirmation
 const toolsRequiringConfirmation: (keyof typeof tools)[] = [
   "getWeatherInformation"
 ];
+
+// Track processed Linear tool completions to avoid duplicate events
+const processedLinearTools = new Set<string>();
 
 export default function Layout() {
   // Theme state
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const savedTheme = localStorage.getItem("theme");
     return (savedTheme as "dark" | "light") || "dark";
+  });
+
+  // Repository state
+  const [selectedRepository, setSelectedRepository] = useState<Repository | null>(() => {
+    const savedRepo = localStorage.getItem("selectedRepository");
+    return savedRepo ? JSON.parse(savedRepo) : null;
   });
 
   // Chat state
@@ -70,6 +91,19 @@ export default function Layout() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
+  // Repository effect - save to localStorage
+  useEffect(() => {
+    if (selectedRepository) {
+      localStorage.setItem("selectedRepository", JSON.stringify(selectedRepository));
+    } else {
+      localStorage.removeItem("selectedRepository");
+    }
+  }, [selectedRepository]);
+
+  const handleRepositorySelect = (repo: Repository | null) => {
+    setSelectedRepository(repo);
+  };
+
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
@@ -100,10 +134,24 @@ export default function Layout() {
     await sendMessage(
       {
         role: "user",
-        parts: [{ type: "text", text: message }]
+        parts: [{ type: "text", text: message }],
+        metadata: {
+          repository: selectedRepository
+            ? {
+                name: selectedRepository.name,
+                full_name: selectedRepository.full_name,
+                owner: typeof selectedRepository.owner === 'string'
+                  ? selectedRepository.owner
+                  : selectedRepository.owner?.login
+              }
+            : null
+        }
       },
       {
-        body: extraData
+        body: {
+          ...extraData,
+          repository: selectedRepository
+        }
       }
     );
   };
@@ -118,6 +166,66 @@ export default function Layout() {
   } = useAgentChat<unknown, UIMessage<{ createdAt: string }>>({
     agent
   });
+
+  // Wrapper to dispatch Linear update events
+  const handleToolResult = (params: { tool: string; toolCallId: string; output: unknown }) => {
+    console.log("[Layout] Tool result received:", params.tool);
+    addToolResult(params);
+
+    // Check if this is a Linear tool that modifies data
+    const linearModifyingTools = [
+      'issue_write',
+      'sub_issue_write',
+      'list_issues',
+      'update',
+      'create',
+      'assign'
+    ];
+
+    const isLinearTool = linearModifyingTools.some(pattern => params.tool.toLowerCase().includes(pattern));
+    console.log("[Layout] Is Linear tool?", isLinearTool, "Tool name:", params.tool);
+
+    if (isLinearTool) {
+      console.log("[Layout] Linear tool executed, dispatching update event:", params.tool);
+      window.dispatchEvent(new CustomEvent("linear-updated"));
+    }
+  };
+
+  // Watch for Linear tool completions
+  useEffect(() => {
+    // Check the latest message for completed Linear tools
+    const latestMessage = agentMessages[agentMessages.length - 1];
+    if (!latestMessage) return;
+
+    latestMessage.parts?.forEach((part) => {
+      if (part.type.startsWith('tool-')) {
+        const toolName = part.type.replace('tool-', '');
+        const toolCallId = (part as any).toolCallId || '';
+        const uniqueId = `${toolCallId}-${toolName}`;
+
+        // Skip if already processed
+        if (processedLinearTools.has(uniqueId)) return;
+
+        const linearModifyingTools = [
+          'issue_write',
+          'sub_issue_write',
+          'update',
+          'create',
+          'assign'
+        ];
+
+        const isLinearTool = linearModifyingTools.some(pattern => toolName.toLowerCase().includes(pattern));
+        const isCompleted = (part as any).state === 'output-available';
+
+        if (isLinearTool && isCompleted) {
+          console.log("[Layout] Linear tool completed:", toolName);
+          processedLinearTools.add(uniqueId);
+          console.log("[Layout] Dispatching linear-updated event");
+          window.dispatchEvent(new CustomEvent("linear-updated"));
+        }
+      }
+    });
+  }, [agentMessages]);
 
   // Scroll to bottom on mount
   useEffect(() => {
@@ -316,15 +424,16 @@ export default function Layout() {
                                   toolUIPart={part}
                                   toolCallId={toolCallId}
                                   needsConfirmation={needsConfirmation}
+                                  showDebug={showDebug}
                                   onSubmit={({ toolCallId, result }) => {
-                                    addToolResult({
+                                    handleToolResult({
                                       tool: part.type.replace("tool-", ""),
                                       toolCallId,
                                       output: result
                                     });
                                   }}
                                   addToolResult={(toolCallId, result) => {
-                                    addToolResult({
+                                    handleToolResult({
                                       tool: part.type.replace("tool-", ""),
                                       toolCallId,
                                       output: result
@@ -348,7 +457,7 @@ export default function Layout() {
           {/* Gradient Fade at Bottom */}
           <div className="absolute bottom-0 left-0 right-0 h-32 pointer-events-none bg-gradient-to-t from-neutral-50 dark:from-neutral-950 via-neutral-50/50 dark:via-neutral-950/50 to-transparent" />
 
-          {/* Input Area (Floating) */}
+          {/* Floating Input Bar */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -361,8 +470,17 @@ export default function Layout() {
             }}
             className="absolute bottom-0 left-0 right-0 p-4"
           >
-            <div className="flex items-center gap-2">
-              <div className="flex-1 relative">
+            <div className="flex flex-col gap-2 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-2 shadow-lg">
+              {/* Top: Context area (repo, actions, etc.) */}
+              <div className="flex items-center gap-2">
+                <RepositorySelector
+                  selectedRepository={selectedRepository}
+                  onRepositorySelect={handleRepositorySelect}
+                />
+              </div>
+
+              {/* Bottom: Input + Send button */}
+              <div className="flex items-center gap-2">
                 <Textarea
                   disabled={pendingToolCallConfirmation}
                   placeholder={
@@ -370,7 +488,7 @@ export default function Layout() {
                       ? "Please respond to the tool confirmation above..."
                       : "Send a message..."
                   }
-                  className="flex w-full border border-neutral-200 dark:border-neutral-700 px-3 py-2 ring-offset-background placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 dark:focus-visible:ring-neutral-700 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base pb-10 dark:bg-neutral-900"
+                  className="flex-1 border-0 px-3 py-2 ring-offset-background placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none !text-base bg-transparent"
                   value={agentInput}
                   onChange={(e) => {
                     handleAgentInputChange(e);
@@ -392,27 +510,27 @@ export default function Layout() {
                   rows={2}
                   style={{ height: textareaHeight }}
                 />
-                <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-                  {status === "submitted" || status === "streaming" ? (
-                    <button
-                      type="button"
-                      onClick={stop}
-                      className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
-                      aria-label="Stop generation"
-                    >
-                      <Stop size={16} />
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
-                      disabled={pendingToolCallConfirmation || !agentInput.trim()}
-                      aria-label="Send message"
-                    >
-                      <PaperPlaneTilt size={16} />
-                    </button>
-                  )}
-                </div>
+
+                {/* Send button (pinned right) */}
+                {status === "submitted" || status === "streaming" ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
+                    aria-label="Stop generation"
+                  >
+                    <Stop size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="inline-flex items-center cursor-pointer justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 rounded-full p-1.5 h-fit border border-neutral-200 dark:border-neutral-800"
+                    disabled={pendingToolCallConfirmation || !agentInput.trim()}
+                    aria-label="Send message"
+                  >
+                    <PaperPlaneTilt size={16} />
+                  </button>
+                )}
               </div>
             </div>
           </form>

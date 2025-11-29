@@ -32,13 +32,15 @@ interface ToolInvocationCardProps {
     result: string;
   }) => void;
   addToolResult: (toolCallId: string, result: string) => void;
+  showDebug?: boolean;
 }
 
 export function ToolInvocationCard({
   toolUIPart,
   toolCallId,
   needsConfirmation,
-  onSubmit
+  onSubmit,
+  showDebug = false
   // addToolResult
 }: ToolInvocationCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -47,8 +49,8 @@ export function ToolInvocationCard({
     <Card className="p-4 my-3 w-full max-w-[500px] rounded-md bg-neutral-100 dark:bg-neutral-900 overflow-hidden">
       <button
         type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 cursor-pointer"
+        onClick={() => showDebug && setIsExpanded(!isExpanded)}
+        className={`w-full flex items-center gap-2 ${showDebug ? "cursor-pointer" : "cursor-default"}`}
       >
         <div
           className={`${needsConfirmation ? "bg-[#F48120]/10" : "bg-[#F48120]/5"} p-1.5 rounded-full flex-shrink-0`}
@@ -61,15 +63,18 @@ export function ToolInvocationCard({
             <span className="text-xs text-[#F48120]/70">✓ Completed</span>
           )}
         </h4>
-        <CaretDown
-          size={16}
-          className={`text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
-        />
+        {showDebug && (
+          <CaretDown
+            size={16}
+            className={`text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
+          />
+        )}
       </button>
 
-      <div
-        className={`transition-all duration-200 ${isExpanded ? "max-h-[200px] opacity-100 mt-3" : "max-h-0 opacity-0 overflow-hidden"}`}
-      >
+      {showDebug && (
+        <div
+          className={`transition-all duration-200 ${isExpanded ? "max-h-[200px] opacity-100 mt-3" : "max-h-0 opacity-0 overflow-hidden"}`}
+        >
         <div
           className="overflow-y-auto"
           style={{ maxHeight: isExpanded ? "180px" : "0px" }}
@@ -134,7 +139,8 @@ export function ToolInvocationCard({
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
     </Card>
   );
 }

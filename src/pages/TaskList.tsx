@@ -21,9 +21,22 @@ export default function TaskList() {
   const [allTasks, setAllTasks] = useState<ClaimedTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [linearConnected, setLinearConnected] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
+
+    // Listen for Linear updates from chat
+    const handleLinearUpdate = () => {
+      console.log("[TaskList] Linear update detected, refreshing tasks...");
+      fetchData();
+    };
+
+    window.addEventListener("linear-updated", handleLinearUpdate);
+
+    return () => {
+      window.removeEventListener("linear-updated", handleLinearUpdate);
+    };
   }, []);
 
   const fetchData = async () => {
@@ -64,9 +77,16 @@ export default function TaskList() {
       if (response.ok) {
         const data = (await response.json()) as ClaimedTask[];
         setMyTasks(data);
+        setTasksError(null);
+      } else {
+        const errorData = await response.json();
+        setTasksError(errorData.error || "Failed to fetch tasks");
+        setMyTasks([]);
       }
     } catch (error) {
       console.error("Failed to fetch my tasks:", error);
+      setTasksError("Network error - could not connect to server");
+      setMyTasks([]);
     }
   };
 
@@ -76,9 +96,16 @@ export default function TaskList() {
       if (response.ok) {
         const data = (await response.json()) as ClaimedTask[];
         setAllTasks(data);
+        setTasksError(null);
+      } else {
+        const errorData = await response.json();
+        setTasksError(errorData.error || "Failed to fetch tasks");
+        setAllTasks([]);
       }
     } catch (error) {
       console.error("Failed to fetch all tasks:", error);
+      setTasksError("Network error - could not connect to server");
+      setAllTasks([]);
     } finally {
       setTasksLoading(false);
     }
@@ -86,6 +113,18 @@ export default function TaskList() {
 
   return (
     <div className="p-6">
+      {/* Error Banner */}
+      {tasksError && (
+        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-sm text-red-800 dark:text-red-200 font-medium">
+            {tasksError}
+          </p>
+          <p className="text-xs text-red-600 dark:text-red-300 mt-1">
+            Check that Linear MCP server is connected and running in Setup.
+          </p>
+        </div>
+      )}
+
       {/* My Tasks Section */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold mb-3">My Tasks</h2>
