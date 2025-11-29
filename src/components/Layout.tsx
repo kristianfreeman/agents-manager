@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/correctness/useUniqueElementIds: it's alright */
-import { Link } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { useState, useEffect, useRef, useCallback, use } from "react";
 import { useAgent } from "agents/react";
 import { isToolUIPart } from "ai";
@@ -25,7 +25,8 @@ import {
   PaperPlaneTilt,
   Stop,
   Robot,
-  Gear
+  Gear,
+  Kanban
 } from "@phosphor-icons/react";
 
 // List of tools that require human confirmation
@@ -33,22 +34,7 @@ const toolsRequiringConfirmation: (keyof typeof tools)[] = [
   "getWeatherInformation"
 ];
 
-interface ClaimedTask {
-  id: string;
-  title: string;
-  description?: string;
-  url: string;
-  claimedAt: string;
-  researchStatus: "pending" | "in_progress" | "completed" | "failed";
-}
-
-interface McpServer {
-  id: string;
-  name: string;
-  state: "authenticating" | "connecting" | "ready" | "discovering" | "failed";
-}
-
-export default function Home() {
+export default function Layout() {
   // Theme state
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const savedTheme = localStorage.getItem("theme");
@@ -59,12 +45,6 @@ export default function Home() {
   const [showDebug, setShowDebug] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState("auto");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Tasks state
-  const [myTasks, setMyTasks] = useState<ClaimedTask[]>([]);
-  const [allTasks, setAllTasks] = useState<ClaimedTask[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-  const [linearConnected, setLinearConnected] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -81,69 +61,6 @@ export default function Home() {
     }
     localStorage.setItem("theme", theme);
   }, [theme]);
-
-  // Fetch tasks on mount
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    await Promise.all([fetchMyTasks(), fetchAllTasks(), checkLinearConnection()]);
-  };
-
-  const checkLinearConnection = async () => {
-    try {
-      const response = await fetch("/agents/chat/default/mcp-servers");
-      if (response.ok) {
-        const data = (await response.json()) as {
-          servers?: Record<string, McpServer> | McpServer[];
-        };
-
-        let serversArray: McpServer[] = [];
-        if (data.servers) {
-          if (Array.isArray(data.servers)) {
-            serversArray = data.servers;
-          } else {
-            serversArray = Object.entries(data.servers).map(([id, server]) => ({
-              ...server,
-              id: server.id || id
-            }));
-          }
-        }
-
-        const linear = serversArray.find((s) => s.name === "Linear");
-        setLinearConnected(linear?.state === "ready");
-      }
-    } catch (error) {
-      console.error("Failed to check Linear connection:", error);
-    }
-  };
-
-  const fetchMyTasks = async () => {
-    try {
-      const response = await fetch("/agents/chat/default/my-tasks");
-      if (response.ok) {
-        const data = (await response.json()) as ClaimedTask[];
-        setMyTasks(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch my tasks:", error);
-    }
-  };
-
-  const fetchAllTasks = async () => {
-    try {
-      const response = await fetch("/agents/chat/default/tasks");
-      if (response.ok) {
-        const data = (await response.json()) as ClaimedTask[];
-        setAllTasks(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch all tasks:", error);
-    } finally {
-      setTasksLoading(false);
-    }
-  };
 
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
@@ -221,24 +138,11 @@ export default function Home() {
       {/* Top Navigation Bar */}
       <div className="h-16 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex items-center px-6 flex-shrink-0">
         <div className="flex items-center gap-3 flex-1">
-          <div className="flex items-center justify-center h-8 w-8">
-            <svg
-              width="28px"
-              height="28px"
-              className="text-[#F48120]"
-              data-icon="agents"
-            >
-              <title>Cloudflare Agents</title>
-              <symbol id="ai:local:agents" viewBox="0 0 80 79">
-                <path
-                  fill="currentColor"
-                  d="M69.3 39.7c-3.1 0-5.8 2.1-6.7 5H48.3V34h4.6l4.5-2.5c1.1.8 2.5 1.2 3.9 1.2 3.8 0 7-3.1 7-7s-3.1-7-7-7-7 3.1-7 7c0 .9.2 1.8.5 2.6L51.9 30h-3.5V18.8h-.1c-1.3-1-2.9-1.6-4.5-1.9h-.2c-1.9-.3-3.9-.1-5.8.6-.4.1-.8.3-1.2.5h-.1c-.1.1-.2.1-.3.2-1.7 1-3 2.4-4 4 0 .1-.1.2-.1.2l-.3.6c0 .1-.1.1-.1.2v.1h-.6c-2.9 0-5.7 1.2-7.7 3.2-2.1 2-3.2 4.8-3.2 7.7 0 .7.1 1.4.2 2.1-1.3.9-2.4 2.1-3.2 3.5s-1.2 2.9-1.4 4.5c-.1 1.6.1 3.2.7 4.7s1.5 2.9 2.6 4c-.8 1.8-1.2 3.7-1.1 5.6 0 1.9.5 3.8 1.4 5.6s2.1 3.2 3.6 4.4c1.3 1 2.7 1.7 4.3 2.2v-.1q2.25.75 4.8.6h.1c0 .1.1.1.1.1.9 1.7 2.3 3 4 4 .1.1.2.1.3.2h.1c.4.2.8.4 1.2.5 1.4.6 3 .8 4.5.7.4 0 .8-.1 1.3-.1h.1c1.6-.3 3.1-.9 4.5-1.9V62.9h3.5l3.1 1.7c-.3.8-.5 1.7-.5 2.6 0 3.8 3.1 7 7 7s7-3.1 7-7-3.1-7-7-7c-1.5 0-2.8.5-3.9 1.2l-4.6-2.5h-4.6V48.7h14.3c.9 2.9 3.5 5 6.7 5 3.8 0 7-3.1 7-7s-3.1-7-7-7m-7.9-16.9c1.6 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.4-3 3-3m0 41.4c1.6 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.4-3 3-3M44.3 72c-.4.2-.7.3-1.1.3-.2 0-.4.1-.5.1h-.2c-.9.1-1.7 0-2.6-.3-1-.3-1.9-.9-2.7-1.7-.7-.8-1.3-1.7-1.6-2.7l-.3-1.5v-.7q0-.75.3-1.5c.1-.2.1-.4.2-.7s.3-.6.5-.9c0-.1.1-.1.1-.2.1-.1.1-.2.2-.3s.1-.2.2-.3c0 0 0-.1.1-.1l.6-.6-2.7-3.5c-1.3 1.1-2.3 2.4-2.9 3.9-.2.4-.4.9-.5 1.3v.1c-.1.2-.1.4-.1.6-.3 1.1-.4 2.3-.3 3.4-.3 0-.7 0-1-.1-2.2-.4-4.2-1.5-5.5-3.2-1.4-1.7-2-3.9-1.8-6.1q.15-1.2.6-2.4l.3-.6c.1-.2.2-.4.3-.5 0 0 0-.1.1-.1.4-.7.9-1.3 1.5-1.9 1.6-1.5 3.8-2.3 6-2.3q1.05 0 2.1.3v-4.5c-.7-.1-1.4-.2-2.1-.2-1.8 0-3.5.4-5.2 1.1-.7.3-1.3.6-1.9 1s-1.1.8-1.7 1.3c-.3.2-.5.5-.8.8-.6-.8-1-1.6-1.3-2.6-.2-1-.2-2 0-2.9.2-1 .6-1.9 1.3-2.6.6-.8 1.4-1.4 2.3-1.8l1.8-.9-.7-1.9c-.4-1-.5-2.1-.4-3.1s.5-2.1 1.1-2.9q.9-1.35 2.4-2.1c.9-.5 2-.8 3-.7.5 0 1 .1 1.5.2 1 .2 1.8.7 2.6 1.3s1.4 1.4 1.8 2.3l4.1-1.5c-.9-2-2.3-3.7-4.2-4.9q-.6-.3-.9-.6c.4-.7 1-1.4 1.6-1.9.8-.7 1.8-1.1 2.9-1.3.9-.2 1.7-.1 2.6 0 .4.1.7.2 1.1.3V72zm25-22.3c-1.6 0-3-1.3-3-3 0-1.6 1.3-3 3-3s3 1.3 3 3c0 1.6-1.3 3-3 3"
-                />
-              </symbol>
-              <use href="#ai:local:agents" />
-            </svg>
-          </div>
-          <h1 className="text-lg font-semibold">Task Manager</h1>
+          <Link to="/" className="flex items-center gap-3">
+            <div className="flex items-center justify-center h-8 w-8">
+              <Kanban size={28} weight="fill" className="text-white" />
+            </div>
+          </Link>
         </div>
 
         <div className="flex items-center gap-2">
@@ -285,7 +189,7 @@ export default function Home() {
         {/* Chat Area (2/3) */}
         <div className="flex-[2] flex flex-col border-r border-neutral-200 dark:border-neutral-800 relative">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40">
             {agentMessages.length === 0 && (
               <div className="h-full flex items-center justify-center">
                 <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900">
@@ -320,7 +224,7 @@ export default function Home() {
               return (
                 <div key={m.id}>
                   {showDebug && (
-                    <pre className="text-xs text-muted-foreground overflow-scroll">
+                    <pre className="text-xs text-muted-foreground overflow-auto whitespace-pre-wrap break-all">
                       {JSON.stringify(m, null, 2)}
                     </pre>
                   )}
@@ -428,6 +332,9 @@ export default function Home() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Gradient Fade at Bottom */}
+          <div className="absolute bottom-0 left-0 right-0 h-32 pointer-events-none bg-gradient-to-t from-neutral-50 dark:from-neutral-950 via-neutral-50/50 dark:via-neutral-950/50 to-transparent" />
+
           {/* Input Area (Floating) */}
           <form
             onSubmit={(e) => {
@@ -439,7 +346,7 @@ export default function Home() {
               });
               setTextareaHeight("auto");
             }}
-            className="absolute bottom-0 left-0 right-0 p-4 bg-neutral-50 dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800"
+            className="absolute bottom-0 left-0 right-0 p-4"
           >
             <div className="flex items-center gap-2">
               <div className="flex-1 relative">
@@ -498,74 +405,9 @@ export default function Home() {
           </form>
         </div>
 
-        {/* Tasks Sidebar (1/3) */}
-        <div className="flex-1 overflow-y-auto p-6 bg-neutral-50 dark:bg-neutral-950">
-          {/* My Tasks Section */}
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold mb-3">My Tasks</h2>
-            {tasksLoading ? (
-              <div className="text-center py-8 text-neutral-600 dark:text-neutral-400 text-sm">
-                Loading tasks...
-              </div>
-            ) : myTasks.length === 0 ? (
-              <div className="text-center py-8 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-2">
-                  No tasks assigned to you
-                </p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-500">
-                  {linearConnected
-                    ? "You don't have any assigned tasks in Linear"
-                    : "Connect Linear in Setup to start claiming tasks"}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {myTasks.map((task) => (
-                  <Link
-                    key={task.id}
-                    to={`/${task.id}`}
-                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-850 transition-colors cursor-pointer block"
-                  >
-                    <h3 className="font-medium text-sm">{task.title}</h3>
-                    <span className="text-[#F48120] text-xs whitespace-nowrap ml-4">
-                      →
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* All Tasks Section */}
-          <div>
-            <h2 className="text-lg font-semibold mb-3">All Tasks</h2>
-            {tasksLoading ? (
-              <div className="text-center py-8 text-neutral-600 dark:text-neutral-400 text-sm">
-                Loading tasks...
-              </div>
-            ) : allTasks.length === 0 ? (
-              <div className="text-center py-8 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                <p className="text-neutral-600 dark:text-neutral-400 text-sm">
-                  No tasks available
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {allTasks.map((task) => (
-                  <Link
-                    key={task.id}
-                    to={`/${task.id}`}
-                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-850 transition-colors cursor-pointer block"
-                  >
-                    <h3 className="font-medium text-sm">{task.title}</h3>
-                    <span className="text-[#F48120] text-xs whitespace-nowrap ml-4">
-                      →
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
+        {/* Sidebar Content (1/3) - React Router Outlet */}
+        <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950">
+          <Outlet />
         </div>
       </div>
     </div>
