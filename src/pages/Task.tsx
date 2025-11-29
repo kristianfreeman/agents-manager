@@ -1,5 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { Streamdown } from "streamdown";
 
 interface TaskDetails {
   id: string;
@@ -94,9 +95,9 @@ export default function Task() {
           {task.description && (
             <div className="mt-4">
               <h2 className="text-lg font-semibold mb-2">Description</h2>
-              <p className="text-neutral-600 dark:text-neutral-400">
-                {task.description}
-              </p>
+              <div className="markdown-body text-neutral-600 dark:text-neutral-400">
+                <Streamdown>{task.description}</Streamdown>
+              </div>
             </div>
           )}
 

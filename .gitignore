@@ -142,6 +142,8 @@ dist
 .wrangler
 .dev.vars
 
+# Claude Code
+.claude
 
 .dev.vars*
 !.dev.vars.example
