@@ -28,25 +28,6 @@ const model = openai("gpt-4o-2024-11-20");
  */
 export class Chat extends AIChatAgent<Env> {
   /**
-   * Initialize research workflows table if it doesn't exist
-   */
-  private async ensureResearchWorkflowsTable() {
-    await this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS research_workflows (
-        id TEXT PRIMARY KEY,
-        status TEXT NOT NULL,
-        repository TEXT NOT NULL,
-        question TEXT NOT NULL,
-        depth TEXT NOT NULL,
-        results TEXT,
-        error TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-  }
-
-  /**
    * Create a new research workflow and schedule it
    * This is called by the researchRepository tool
    */
@@ -56,23 +37,50 @@ export class Chat extends AIChatAgent<Env> {
     question: string,
     depth: string
   ): Promise<void> {
-    await this.ensureResearchWorkflowsTable();
-
     const now = Date.now();
-    await this.sql.exec(
-      `INSERT INTO research_workflows (id, status, repository, question, depth, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      workflowId,
-      "pending",
+
+    // Store workflow in Durable Object storage
+    await this.ctx.storage.put(`workflow:${workflowId}`, {
+      id: workflowId,
+      status: "pending",
       repository,
       question,
       depth,
-      now,
-      now
-    );
+      created_at: now,
+      updated_at: now
+    });
 
     // Schedule the workflow to run immediately
     this.schedule(0, "executeResearch", workflowId);
+  }
+
+  /**
+   * Get workflow by ID
+   */
+  private async getWorkflow(workflowId: string) {
+    return await this.ctx.storage.get(`workflow:${workflowId}`);
+  }
+
+  /**
+   * Update workflow status and results
+   */
+  private async updateWorkflow(
+    workflowId: string,
+    updates: Partial<{
+      status: string;
+      results: string;
+      error: string;
+      updated_at: number;
+    }>
+  ) {
+    const workflow = await this.getWorkflow(workflowId);
+    if (workflow) {
+      await this.ctx.storage.put(`workflow:${workflowId}`, {
+        ...workflow,
+        ...updates,
+        updated_at: Date.now()
+      });
+    }
   }
 
   /**
@@ -86,12 +94,8 @@ export class Chat extends AIChatAgent<Env> {
       url.pathname.match(/\/research-workflows\/[\w-]+$/) &&
       request.method === "GET"
     ) {
-      await this.ensureResearchWorkflowsTable();
-
       const workflowId = url.pathname.split("/").pop()!;
-      const workflow = await this.sql
-        .exec(`SELECT * FROM research_workflows WHERE id = ?`, workflowId)
-        .then((result) => result.rows[0]);
+      const workflow = await this.getWorkflow(workflowId);
 
       if (!workflow) {
         return new Response(JSON.stringify({ error: "Workflow not found" }), {
@@ -110,15 +114,18 @@ export class Chat extends AIChatAgent<Env> {
       url.pathname.endsWith("/research-workflows") &&
       request.method === "GET"
     ) {
-      await this.ensureResearchWorkflowsTable();
+      // Get all workflow keys from storage
+      const allKeys = await this.ctx.storage.list({ prefix: "workflow:" });
+      const workflows = [];
 
-      const workflows = await this.sql
-        .exec(
-          `SELECT * FROM research_workflows ORDER BY created_at DESC LIMIT 50`
-        )
-        .then((result) => result.rows);
+      for (const [_, workflow] of allKeys) {
+        workflows.push(workflow);
+      }
 
-      return new Response(JSON.stringify(workflows), {
+      // Sort by created_at descending
+      workflows.sort((a: any, b: any) => b.created_at - a.created_at);
+
+      return new Response(JSON.stringify(workflows.slice(0, 50)), {
         headers: { "Content-Type": "application/json" }
       });
     }
@@ -710,12 +717,8 @@ When using GitHub MCP tools, always reference this repository context.`;
     );
 
     try {
-      await this.ensureResearchWorkflowsTable();
-
-      // Get workflow details from SQLite
-      const workflow = await this.sql
-        .exec(`SELECT * FROM research_workflows WHERE id = ?`, workflowId)
-        .then((result) => result.rows[0]);
+      // Get workflow details from storage
+      const workflow = (await this.getWorkflow(workflowId)) as any;
 
       if (!workflow) {
         console.error(`[Research Workflow] Workflow not found: ${workflowId}`);
@@ -733,12 +736,7 @@ When using GitHub MCP tools, always reference this repository context.`;
       );
 
       // Update status to in_progress
-      await this.sql.exec(
-        `UPDATE research_workflows SET status = ?, updated_at = ? WHERE id = ?`,
-        "in_progress",
-        Date.now(),
-        workflowId
-      );
+      await this.updateWorkflow(workflowId, { status: "in_progress" });
 
       // Get MCP tools - wait for them to be ready
       let mcpTools = {};
@@ -843,33 +841,21 @@ Use the available GitHub MCP tools to thoroughly research the codebase.`,
         `[Research Workflow] AI completion finished, response length: ${fullResponse.length}, parts: ${responseParts.length}`
       );
 
-      // Save results to workflow record
-      await this.sql.exec(
-        `UPDATE research_workflows
-         SET status = ?, results = ?, updated_at = ?
-         WHERE id = ?`,
-        "completed",
-        fullResponse || "No response generated",
-        Date.now(),
-        workflowId
-      );
+      // Save results to workflow
+      await this.updateWorkflow(workflowId, {
+        status: "completed",
+        results: fullResponse || "No response generated"
+      });
 
-      console.log(
-        "[Research Workflow] Research completed and saved to database"
-      );
+      console.log("[Research Workflow] Research completed and saved");
     } catch (error) {
       console.error("[Research Workflow] Failed to execute research:", error);
 
-      // Save error to workflow record
-      await this.sql.exec(
-        `UPDATE research_workflows
-         SET status = ?, error = ?, updated_at = ?
-         WHERE id = ?`,
-        "failed",
-        String(error),
-        Date.now(),
-        workflowId
-      );
+      // Save error to workflow
+      await this.updateWorkflow(workflowId, {
+        status: "failed",
+        error: String(error)
+      });
     }
   }
 
