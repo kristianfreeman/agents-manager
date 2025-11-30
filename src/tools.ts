@@ -128,33 +128,47 @@ const researchRepository = tool({
       .default("medium")
   }),
   execute: async ({ repository, question, depth }) => {
-    const { agent } = getCurrentAgent<Chat>();
-
     console.log(
-      `[Research] Scheduling research workflow for ${repository}: "${question}" (depth: ${depth})`
+      `[Research] Starting research on ${repository}: "${question}" (depth: ${depth})`
     );
 
-    try {
-      // Schedule an immediate workflow to handle the research
-      // The workflow will run with access to MCP tools and can orchestrate multiple tool calls
-      const taskData = JSON.stringify({ repository, question, depth });
+    // Build research instructions based on depth
+    const depthInstructions = {
+      quick: `I'll research this question quickly by:
+1. Searching for relevant files using GitHub code search
+2. Reading 2-3 key files
+3. Providing a concise summary
 
-      agent!.schedule(0, "executeResearch", taskData);
+Let me explore the ${repository} repository now...`,
 
-      return {
-        success: true,
-        message: `Research workflow scheduled for "${question}" in ${repository}. The AI will explore the codebase and provide results shortly.`,
-        repository,
-        question,
-        depth
-      };
-    } catch (error) {
-      console.error("[Research] Failed to schedule research workflow:", error);
-      return {
-        success: false,
-        error: `Failed to schedule research: ${error}`
-      };
-    }
+      medium: `I'll conduct a moderate-depth research by:
+1. Searching for relevant files using multiple keywords
+2. Reading 3-5 key implementation files
+3. Examining configuration, tests, and documentation
+4. Providing a comprehensive summary with code examples
+
+Let me explore the ${repository} repository now...`,
+
+      thorough: `I'll conduct thorough research by:
+1. Using multiple search strategies to find all relevant files
+2. Reading 5-10 files including implementation, config, tests, and docs
+3. Analyzing architecture, patterns, dependencies, and API design
+4. Providing detailed analysis with code examples
+
+Let me deeply explore the ${repository} repository now...`
+    };
+
+    // Return instructions that guide the AI to research
+    // The AI will naturally use MCP tools in the ongoing conversation
+    return {
+      success: true,
+      message: depthInstructions[depth],
+      repository,
+      question,
+      depth,
+      instructions:
+        "Use GitHub MCP tools (search_code, get_file_contents) to research this question thoroughly. Be autonomous and don't ask for guidance - explore multiple approaches if needed."
+    };
   }
 });
 
