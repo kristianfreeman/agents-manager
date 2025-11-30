@@ -50,7 +50,9 @@ export class Chat extends AIChatAgent<Env> {
       };
 
       console.log(`[MCP] Connecting to ${name} at ${serverUrl}`);
-      console.log(`[MCP] Auth token provided: ${authToken ? "YES (length: " + authToken.length + ")" : "NO"}`);
+      console.log(
+        `[MCP] Auth token provided: ${authToken ? "YES (length: " + authToken.length + ")" : "NO"}`
+      );
 
       // If authToken provided, use it in headers (for PAT-based auth)
       const options = authToken
@@ -74,13 +76,14 @@ export class Chat extends AIChatAgent<Env> {
           options
         );
 
-        console.log(`[MCP] Connection result - ID: ${id}, authUrl: ${authUrl || "none"}`);
+        console.log(
+          `[MCP] Connection result - ID: ${id}, authUrl: ${authUrl || "none"}`
+        );
 
         if (authUrl) {
-          return new Response(
-            JSON.stringify({ serverId: id, authUrl }),
-            { headers: { "Content-Type": "application/json" } }
-          );
+          return new Response(JSON.stringify({ serverId: id, authUrl }), {
+            headers: { "Content-Type": "application/json" }
+          });
         }
 
         return new Response(
@@ -135,7 +138,10 @@ export class Chat extends AIChatAgent<Env> {
 
         // If server is not ready yet, return empty array
         if ((linearServer as any).state !== "ready") {
-          console.log("[Linear] Server not ready yet, state:", (linearServer as any).state);
+          console.log(
+            "[Linear] Server not ready yet, state:",
+            (linearServer as any).state
+          );
           return new Response(JSON.stringify([]), {
             headers: { "Content-Type": "application/json" }
           });
@@ -147,12 +153,15 @@ export class Chat extends AIChatAgent<Env> {
         console.log("[Linear] Server ID:", linearServerId);
 
         // Find the Linear issues list tool - it has format: tool_{serverId}_list_issues
-        const issuesListTool = toolNames.find(name =>
+        const issuesListTool = toolNames.find((name) =>
           name.includes(`tool_${linearServerId}_list_issues`)
         );
 
         if (!issuesListTool) {
-          console.error("[Linear] No issues list tool found for server", linearServerId);
+          console.error(
+            "[Linear] No issues list tool found for server",
+            linearServerId
+          );
           return new Response(JSON.stringify([]), {
             headers: { "Content-Type": "application/json" }
           });
@@ -176,16 +185,24 @@ export class Chat extends AIChatAgent<Env> {
             state: { type: { in: ["started", "unstarted", "backlog"] } }
           }
         };
-        console.log("[Linear] Filter params for my-tasks:", JSON.stringify(filterParams, null, 2));
+        console.log(
+          "[Linear] Filter params for my-tasks:",
+          JSON.stringify(filterParams, null, 2)
+        );
         const result = await tool.execute(filterParams);
 
-        console.log("[Linear] Raw MCP response:", JSON.stringify(result, null, 2));
+        console.log(
+          "[Linear] Raw MCP response:",
+          JSON.stringify(result, null, 2)
+        );
 
         // MCP tools return results in content array format
         // Parse the actual data from the text content
         let issues = [];
         if ((result as any).content && Array.isArray((result as any).content)) {
-          const textContent = (result as any).content.find((c: any) => c.type === 'text');
+          const textContent = (result as any).content.find(
+            (c: any) => c.type === "text"
+          );
           if (textContent && textContent.text) {
             try {
               issues = JSON.parse(textContent.text);
@@ -207,10 +224,16 @@ export class Chat extends AIChatAgent<Env> {
         // (Linear MCP server doesn't always respect filters)
         const assignedIssues = issues.filter((issue: any) => {
           const hasAssignee = issue.assigneeId;
-          const notDone = issue.status !== "Done" && issue.status !== "Canceled";
+          const notDone =
+            issue.status !== "Done" && issue.status !== "Canceled";
           return hasAssignee && notDone;
         });
-        console.log("[Linear] Filtered to assigned, active issues:", assignedIssues.length, "from", issues.length);
+        console.log(
+          "[Linear] Filtered to assigned, active issues:",
+          assignedIssues.length,
+          "from",
+          issues.length
+        );
 
         // Transform Linear issues to our task format
         const tasks = assignedIssues.map((issue: any) => ({
@@ -229,7 +252,8 @@ export class Chat extends AIChatAgent<Env> {
         console.error("[Linear] Failed to fetch my tasks:", error);
         return new Response(
           JSON.stringify({
-            error: "Failed to fetch tasks from Linear. The Linear MCP server may be unavailable.",
+            error:
+              "Failed to fetch tasks from Linear. The Linear MCP server may be unavailable.",
             details: error instanceof Error ? error.message : String(error)
           }),
           {
@@ -261,7 +285,7 @@ export class Chat extends AIChatAgent<Env> {
         console.log("[GitHub] Available MCP tools:", toolNames);
 
         // First get authenticated user
-        const getMeTool = toolNames.find(name => name.includes('get_me'));
+        const getMeTool = toolNames.find((name) => name.includes("get_me"));
         if (!getMeTool) {
           console.error("[GitHub] No get_me tool found");
           return new Response(JSON.stringify([]), {
@@ -275,8 +299,13 @@ export class Chat extends AIChatAgent<Env> {
 
         // Parse username from result
         let username = null;
-        if ((meResult as any).content && Array.isArray((meResult as any).content)) {
-          const textContent = (meResult as any).content.find((c: any) => c.type === 'text');
+        if (
+          (meResult as any).content &&
+          Array.isArray((meResult as any).content)
+        ) {
+          const textContent = (meResult as any).content.find(
+            (c: any) => c.type === "text"
+          );
           if (textContent && textContent.text) {
             try {
               const userData = JSON.parse(textContent.text);
@@ -296,7 +325,9 @@ export class Chat extends AIChatAgent<Env> {
         }
 
         // Now search for user's repositories
-        const searchReposTool = toolNames.find(name => name.includes('search_repositories'));
+        const searchReposTool = toolNames.find((name) =>
+          name.includes("search_repositories")
+        );
         if (!searchReposTool) {
           console.error("[GitHub] No search_repositories tool found");
           return new Response(JSON.stringify([]), {
@@ -308,12 +339,17 @@ export class Chat extends AIChatAgent<Env> {
         const result = await tools[searchReposTool].execute({
           query: `user:${username}`
         });
-        console.log("[GitHub] Raw MCP response:", JSON.stringify(result, null, 2));
+        console.log(
+          "[GitHub] Raw MCP response:",
+          JSON.stringify(result, null, 2)
+        );
 
         // Parse MCP response
         let repositories = [];
         if ((result as any).content && Array.isArray((result as any).content)) {
-          const textContent = (result as any).content.find((c: any) => c.type === 'text');
+          const textContent = (result as any).content.find(
+            (c: any) => c.type === "text"
+          );
           if (textContent && textContent.text) {
             try {
               const searchResult = JSON.parse(textContent.text);
@@ -362,7 +398,10 @@ export class Chat extends AIChatAgent<Env> {
 
         // If server is not ready yet, return empty array
         if ((linearServer as any).state !== "ready") {
-          console.log("[Linear] Server not ready yet, state:", (linearServer as any).state);
+          console.log(
+            "[Linear] Server not ready yet, state:",
+            (linearServer as any).state
+          );
           return new Response(JSON.stringify([]), {
             headers: { "Content-Type": "application/json" }
           });
@@ -374,12 +413,15 @@ export class Chat extends AIChatAgent<Env> {
         console.log("[Linear] Server ID:", linearServerId);
 
         // Find the Linear issues list tool - it has format: tool_{serverId}_list_issues
-        const issuesListTool = toolNames.find(name =>
+        const issuesListTool = toolNames.find((name) =>
           name.includes(`tool_${linearServerId}_list_issues`)
         );
 
         if (!issuesListTool) {
-          console.error("[Linear] No issues list tool found for server", linearServerId);
+          console.error(
+            "[Linear] No issues list tool found for server",
+            linearServerId
+          );
           return new Response(JSON.stringify([]), {
             headers: { "Content-Type": "application/json" }
           });
@@ -403,13 +445,18 @@ export class Chat extends AIChatAgent<Env> {
           }
         });
 
-        console.log("[Linear] Raw MCP response:", JSON.stringify(result, null, 2));
+        console.log(
+          "[Linear] Raw MCP response:",
+          JSON.stringify(result, null, 2)
+        );
 
         // MCP tools return results in content array format
         // Parse the actual data from the text content
         let issues = [];
         if ((result as any).content && Array.isArray((result as any).content)) {
-          const textContent = (result as any).content.find((c: any) => c.type === 'text');
+          const textContent = (result as any).content.find(
+            (c: any) => c.type === "text"
+          );
           if (textContent && textContent.text) {
             try {
               issues = JSON.parse(textContent.text);
@@ -422,10 +469,16 @@ export class Chat extends AIChatAgent<Env> {
 
         // Filter client-side to exclude completed/canceled issues
         const activeIssues = issues.filter((issue: any) => {
-          const notDone = issue.status !== "Done" && issue.status !== "Canceled";
+          const notDone =
+            issue.status !== "Done" && issue.status !== "Canceled";
           return notDone;
         });
-        console.log("[Linear] Filtered to active issues:", activeIssues.length, "from", issues.length);
+        console.log(
+          "[Linear] Filtered to active issues:",
+          activeIssues.length,
+          "from",
+          issues.length
+        );
 
         // Transform Linear issues to our task format
         const tasks = activeIssues.map((issue: any) => ({
@@ -444,7 +497,8 @@ export class Chat extends AIChatAgent<Env> {
         console.error("[Linear] Failed to fetch tasks:", error);
         return new Response(
           JSON.stringify({
-            error: "Failed to fetch tasks from Linear. The Linear MCP server may be unavailable.",
+            error:
+              "Failed to fetch tasks from Linear. The Linear MCP server may be unavailable.",
             details: error instanceof Error ? error.message : String(error)
           }),
           {
@@ -471,9 +525,17 @@ export class Chat extends AIChatAgent<Env> {
     _options?: { abortSignal?: AbortSignal }
   ) {
     // Collect all tools, including MCP tools
+    // Safely get MCP tools, handling the case where MCP servers are still initializing
+    let mcpTools = {};
+    try {
+      mcpTools = this.mcp.getAITools();
+    } catch (error) {
+      console.warn("[Chat] MCP tools not yet available:", error);
+    }
+
     const allTools = {
       ...tools,
-      ...this.mcp.getAITools()
+      ...mcpTools
     };
 
     const stream = createUIMessageStream({
