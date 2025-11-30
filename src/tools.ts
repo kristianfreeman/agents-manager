@@ -2,7 +2,7 @@
  * Tool definitions for the AI chat agent
  * Tools can either require human confirmation or execute automatically
  */
-import { tool, type ToolSet } from "ai";
+import { tool, type ToolSet, generateId } from "ai";
 import { z } from "zod/v3";
 
 import type { Chat } from "./server";
@@ -131,28 +131,42 @@ const researchRepository = tool({
     const { agent } = getCurrentAgent<Chat>();
 
     console.log(
-      `[Research] Scheduling research workflow for ${repository}: "${question}" (depth: ${depth})`
+      `[Research] Creating research workflow for ${repository}: "${question}" (depth: ${depth})`
     );
 
     try {
-      // Schedule an immediate workflow to handle the research
-      // The workflow will run with access to MCP tools and can orchestrate multiple tool calls
-      const taskData = JSON.stringify({ repository, question, depth });
+      const workflowId = generateId();
+      const now = Date.now();
 
-      agent!.schedule(0, "executeResearch", taskData);
+      // Create workflow record in SQLite
+      await agent!.sql.exec(
+        `INSERT INTO research_workflows (id, status, repository, question, depth, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        workflowId,
+        "pending",
+        repository,
+        question,
+        depth,
+        now,
+        now
+      );
+
+      console.log(`[Research] Created workflow record: ${workflowId}`);
+
+      // Schedule the workflow to run immediately
+      agent!.schedule(0, "executeResearch", workflowId);
 
       return {
         success: true,
-        message: `Research workflow scheduled for "${question}" in ${repository}. The AI will explore the codebase and provide results shortly.`,
-        repository,
-        question,
-        depth
+        workflowId,
+        status: "pending",
+        message: `Research workflow started (ID: ${workflowId}). Check status at /agents/chat/default/research-workflows/${workflowId}`
       };
     } catch (error) {
-      console.error("[Research] Failed to schedule research workflow:", error);
+      console.error("[Research] Failed to create research workflow:", error);
       return {
         success: false,
-        error: `Failed to schedule research: ${error}`
+        error: `Failed to create research workflow: ${error}`
       };
     }
   }

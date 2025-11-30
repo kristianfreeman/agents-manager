@@ -28,10 +28,71 @@ const model = openai("gpt-4o-2024-11-20");
  */
 export class Chat extends AIChatAgent<Env> {
   /**
+   * Initialize research workflows table if it doesn't exist
+   */
+  private async ensureResearchWorkflowsTable() {
+    await this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS research_workflows (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        question TEXT NOT NULL,
+        depth TEXT NOT NULL,
+        results TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+  }
+
+  /**
    * Handle HTTP requests for MCP server management and other agent operations
    */
   async onRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
+
+    // Get research workflow status
+    if (
+      url.pathname.match(/\/research-workflows\/[\w-]+$/) &&
+      request.method === "GET"
+    ) {
+      await this.ensureResearchWorkflowsTable();
+
+      const workflowId = url.pathname.split("/").pop()!;
+      const workflow = await this.sql
+        .exec(`SELECT * FROM research_workflows WHERE id = ?`, workflowId)
+        .then((result) => result.rows[0]);
+
+      if (!workflow) {
+        return new Response(JSON.stringify({ error: "Workflow not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response(JSON.stringify(workflow), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // List all research workflows
+    if (
+      url.pathname.endsWith("/research-workflows") &&
+      request.method === "GET"
+    ) {
+      await this.ensureResearchWorkflowsTable();
+
+      const workflows = await this.sql
+        .exec(
+          `SELECT * FROM research_workflows ORDER BY created_at DESC LIMIT 50`
+        )
+        .then((result) => result.rows);
+
+      return new Response(JSON.stringify(workflows), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     // Get MCP servers state
     if (url.pathname.endsWith("/mcp-servers") && request.method === "GET") {
@@ -614,14 +675,40 @@ When using GitHub MCP tools, always reference this repository context.`;
     ]);
   }
 
-  async executeResearch(taskData: string, _task: Schedule<string>) {
-    console.log("[Research Workflow] Starting research workflow");
+  async executeResearch(workflowId: string, _task: Schedule<string>) {
+    console.log(
+      `[Research Workflow] Starting research workflow: ${workflowId}`
+    );
 
     try {
-      // Parse the research task data
-      const { repository, question, depth } = JSON.parse(taskData);
+      await this.ensureResearchWorkflowsTable();
+
+      // Get workflow details from SQLite
+      const workflow = await this.sql
+        .exec(`SELECT * FROM research_workflows WHERE id = ?`, workflowId)
+        .then((result) => result.rows[0]);
+
+      if (!workflow) {
+        console.error(`[Research Workflow] Workflow not found: ${workflowId}`);
+        return;
+      }
+
+      const { repository, question, depth } = workflow as {
+        repository: string;
+        question: string;
+        depth: "quick" | "medium" | "thorough";
+      };
+
       console.log(
         `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}`
+      );
+
+      // Update status to in_progress
+      await this.sql.exec(
+        `UPDATE research_workflows SET status = ?, updated_at = ? WHERE id = ?`,
+        "in_progress",
+        Date.now(),
+        workflowId
       );
 
       // Get MCP tools - wait for them to be ready
@@ -682,7 +769,9 @@ When using GitHub MCP tools, always reference this repository context.`;
       // Run AI completion directly without triggering onChatMessage
       const messages = [...this.messages, researchMessage];
 
-      console.log("[Research Workflow] Running AI completion with MCP tools...");
+      console.log(
+        "[Research Workflow] Running AI completion with MCP tools..."
+      );
 
       const result = streamText({
         system: `You are a research assistant specialized in code exploration.
@@ -725,45 +814,33 @@ Use the available GitHub MCP tools to thoroughly research the codebase.`,
         `[Research Workflow] AI completion finished, response length: ${fullResponse.length}, parts: ${responseParts.length}`
       );
 
-      // Save both the prompt and response to conversation
-      await this.saveMessages([
-        ...messages,
-        {
-          id: generateId(),
-          role: "assistant",
-          parts: [
-            {
-              type: "text",
-              text: fullResponse
-            }
-          ],
-          metadata: {
-            createdAt: new Date()
-          }
-        }
-      ]);
+      // Save results to workflow record
+      await this.sql.exec(
+        `UPDATE research_workflows
+         SET status = ?, results = ?, updated_at = ?
+         WHERE id = ?`,
+        "completed",
+        fullResponse || "No response generated",
+        Date.now(),
+        workflowId
+      );
 
-      console.log("[Research Workflow] Research completed and saved");
+      console.log(
+        "[Research Workflow] Research completed and saved to database"
+      );
     } catch (error) {
       console.error("[Research Workflow] Failed to execute research:", error);
 
-      // Add error message to conversation
-      await this.saveMessages([
-        ...this.messages,
-        {
-          id: generateId(),
-          role: "assistant",
-          parts: [
-            {
-              type: "text",
-              text: `Research workflow failed: ${error}`
-            }
-          ],
-          metadata: {
-            createdAt: new Date()
-          }
-        }
-      ]);
+      // Save error to workflow record
+      await this.sql.exec(
+        `UPDATE research_workflows
+         SET status = ?, error = ?, updated_at = ?
+         WHERE id = ?`,
+        "failed",
+        String(error),
+        Date.now(),
+        workflowId
+      );
     }
   }
 
