@@ -40,7 +40,11 @@ export default function TaskList() {
   }, []);
 
   const fetchData = async () => {
-    await Promise.all([fetchMyTasks(), fetchAllTasks(), checkLinearConnection()]);
+    await Promise.all([
+      fetchMyTasks(),
+      fetchAllTasks(),
+      checkLinearConnection()
+    ]);
   };
 
   const checkLinearConnection = async () => {
@@ -168,27 +172,37 @@ export default function TaskList() {
           <div className="text-center py-8 text-neutral-600 dark:text-neutral-400 text-sm">
             Loading tasks...
           </div>
-        ) : allTasks.length === 0 ? (
-          <div className="text-center py-8 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-            <p className="text-neutral-600 dark:text-neutral-400 text-sm">
-              No tasks available
-            </p>
-          </div>
         ) : (
-          <div className="space-y-2">
-            {allTasks.map((task) => (
-              <Link
-                key={task.id}
-                to={`/${task.id}`}
-                className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-850 transition-colors cursor-pointer block"
-              >
-                <h3 className="font-medium text-sm">{task.title}</h3>
-                <span className="text-[#F48120] text-xs whitespace-nowrap ml-4">
-                  →
-                </span>
-              </Link>
-            ))}
-          </div>
+          (() => {
+            // Filter out tasks that are already in "My Tasks"
+            const myTaskIds = new Set(myTasks.map((task) => task.id));
+            const unassignedTasks = allTasks.filter(
+              (task) => !myTaskIds.has(task.id)
+            );
+
+            return unassignedTasks.length === 0 ? (
+              <div className="text-center py-8 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
+                <p className="text-neutral-600 dark:text-neutral-400 text-sm">
+                  No unassigned tasks available
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {unassignedTasks.map((task) => (
+                  <Link
+                    key={task.id}
+                    to={`/${task.id}`}
+                    className="bg-white dark:bg-neutral-900 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-850 transition-colors cursor-pointer block"
+                  >
+                    <h3 className="font-medium text-sm">{task.title}</h3>
+                    <span className="text-[#F48120] text-xs whitespace-nowrap ml-4">
+                      →
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            );
+          })()
         )}
       </div>
     </div>
