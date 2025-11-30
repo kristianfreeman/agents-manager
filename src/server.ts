@@ -650,8 +650,10 @@ When using GitHub MCP tools, always reference this repository context.`;
         }
       }
 
+      // Exclude researchRepository from tools to prevent recursive calls
+      const { researchRepository, ...localToolsWithoutResearch } = tools;
       const allTools = {
-        ...tools,
+        ...localToolsWithoutResearch,
         ...mcpTools
       };
 
@@ -696,16 +698,31 @@ Use the available GitHub MCP tools to thoroughly research the codebase.`,
 
       // Consume the stream and collect response
       let fullResponse = "";
+      const responseParts: Array<{
+        type: string;
+        text?: string;
+        toolName?: string;
+      }> = [];
       const stream = result.toUIMessageStream();
 
       for await (const chunk of stream) {
+        console.log(`[Research Workflow] Stream chunk type: ${chunk.type}`);
+
         if (chunk.type === "text") {
           fullResponse += chunk.text;
+          responseParts.push({ type: "text", text: chunk.text });
+        } else if (chunk.type === "tool-call") {
+          console.log(`[Research Workflow] Tool call: ${chunk.toolName}`);
+          responseParts.push({ type: "tool-call", toolName: chunk.toolName });
+        } else if (chunk.type === "tool-result") {
+          console.log(
+            `[Research Workflow] Tool result: ${JSON.stringify(chunk).slice(0, 200)}`
+          );
         }
       }
 
       console.log(
-        `[Research Workflow] AI completion finished, response length: ${fullResponse.length}`
+        `[Research Workflow] AI completion finished, response length: ${fullResponse.length}, parts: ${responseParts.length}`
       );
 
       // Save both the prompt and response to conversation
