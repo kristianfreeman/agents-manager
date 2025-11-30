@@ -28,9 +28,10 @@ const model = openai("gpt-4o-2024-11-20");
  */
 export class Chat extends AIChatAgent<Env> {
   /**
-   * Ensure research_workflows table exists
+   * Ensure research_workflows table exists with all columns
    */
   private ensureWorkflowsTable() {
+    // Create table if it doesn't exist
     this.sql`
       CREATE TABLE IF NOT EXISTS research_workflows (
         id TEXT PRIMARY KEY,
@@ -38,12 +39,20 @@ export class Chat extends AIChatAgent<Env> {
         repository TEXT NOT NULL,
         question TEXT NOT NULL,
         depth TEXT NOT NULL,
+        task_id TEXT,
         results TEXT,
         error TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `;
+
+    // Add task_id column if it doesn't exist (migration for existing tables)
+    try {
+      this.sql`ALTER TABLE research_workflows ADD COLUMN task_id TEXT`;
+    } catch {
+      // Column already exists, ignore error
+    }
   }
 
   /**
@@ -54,15 +63,16 @@ export class Chat extends AIChatAgent<Env> {
     workflowId: string,
     repository: string,
     question: string,
-    depth: string
+    depth: string,
+    taskId?: string
   ): Promise<void> {
     this.ensureWorkflowsTable();
     const now = Date.now();
 
     // Store workflow using SQL tagged template literal
     this.sql`
-      INSERT INTO research_workflows (id, status, repository, question, depth, created_at, updated_at)
-      VALUES (${workflowId}, ${"pending"}, ${repository}, ${question}, ${depth}, ${now}, ${now})
+      INSERT INTO research_workflows (id, status, repository, question, depth, task_id, created_at, updated_at)
+      VALUES (${workflowId}, ${"pending"}, ${repository}, ${question}, ${depth}, ${taskId ?? null}, ${now}, ${now})
     `;
 
     // Schedule the workflow to run immediately
@@ -80,6 +90,7 @@ export class Chat extends AIChatAgent<Env> {
       repository: string;
       question: string;
       depth: string;
+      task_id: string | null;
       results: string | null;
       error: string | null;
       created_at: number;
@@ -766,11 +777,11 @@ When using GitHub MCP tools, always reference this repository context.`;
       return;
     }
 
-    const { repository, question, depth: depthStr } = workflow;
+    const { repository, question, depth: depthStr, task_id: taskId } = workflow;
     const depth = depthStr as "quick" | "medium" | "thorough";
 
     console.log(
-      `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}`
+      `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}${taskId ? `, Task: ${taskId}` : ""}`
     );
 
     try {
@@ -979,6 +990,11 @@ Be thorough and provide a comprehensive answer.`,
       ]);
 
       console.log("[Research Workflow] Research completed and saved");
+
+      // If this research is associated with a Linear task, post results as a comment
+      if (taskId) {
+        await this.postResearchToLinear(taskId, repository, question, fullResponse);
+      }
     } catch (error) {
       console.error("[Research Workflow] Failed to execute research:", error);
 
@@ -1010,6 +1026,94 @@ Be thorough and provide a comprehensive answer.`,
           }
         }
       ]);
+    }
+  }
+
+  /**
+   * Post research results as a comment to a Linear task
+   */
+  private async postResearchToLinear(
+    taskId: string,
+    repository: string,
+    question: string,
+    results: string
+  ): Promise<void> {
+    console.log(`[Research Workflow] Posting results to Linear task: ${taskId}`);
+
+    try {
+      // Wait for Linear MCP to be ready
+      const MAX_RETRIES = 15;
+      const RETRY_DELAY = 1000;
+
+      for (let i = 0; i < MAX_RETRIES; i++) {
+        const mcpState = this.getMcpServers();
+        const servers = (mcpState as any).servers || {};
+        const linearServer = Object.entries(servers).find(
+          ([_, s]: [string, any]) => s.name === "Linear"
+        );
+
+        if (linearServer && (linearServer[1] as any).state === "ready") {
+          break;
+        }
+
+        console.log(
+          `[Research Workflow] Waiting for Linear MCP (attempt ${i + 1}/${MAX_RETRIES})`
+        );
+
+        if (i === MAX_RETRIES - 1) {
+          console.error(
+            "[Research Workflow] Linear MCP not ready, skipping comment post"
+          );
+          return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+      }
+
+      // Get MCP tools and find the Linear comment tool
+      const mcpTools = this.mcp.getAITools();
+      const commentToolName = Object.keys(mcpTools).find(
+        (name) => name.includes("add_issue_comment") || name.includes("create_comment")
+      );
+
+      if (!commentToolName) {
+        console.error(
+          "[Research Workflow] Linear comment tool not found, available tools:",
+          Object.keys(mcpTools).filter((n) => n.toLowerCase().includes("linear"))
+        );
+        return;
+      }
+
+      const commentTool = mcpTools[commentToolName];
+      if (!commentTool?.execute) {
+        console.error("[Research Workflow] Linear comment tool has no execute function");
+        return;
+      }
+
+      // Format the comment
+      const comment = `## 🔬 Research Results
+
+**Repository:** ${repository}
+**Question:** ${question}
+
+---
+
+${results}
+
+---
+*Generated automatically by AI research workflow*`;
+
+      // Call the Linear MCP tool to post the comment
+      console.log(`[Research Workflow] Calling ${commentToolName} for task ${taskId}`);
+      await commentTool.execute({
+        issueId: taskId,
+        body: comment
+      });
+
+      console.log(`[Research Workflow] Successfully posted comment to Linear task ${taskId}`);
+    } catch (error) {
+      console.error("[Research Workflow] Failed to post to Linear:", error);
+      // Don't throw - this is a non-critical operation
     }
   }
 

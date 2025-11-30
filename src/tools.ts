@@ -111,39 +111,78 @@ const cancelScheduledTask = tool({
 /**
  * Hierarchical repository research tool
  * Runs as an async background workflow - results appear in chat automatically
+ * Optionally posts results as a comment to a Linear task
  */
 const researchRepository = tool({
   description:
-    "Start a background research workflow to explore a GitHub repository and answer questions about the codebase. IMPORTANT: This runs asynchronously - results will appear in the chat automatically when complete. Do NOT call this tool multiple times for the same question. Only call once per research request.",
+    "Start a background research workflow to explore a GitHub repository and answer questions about the codebase. IMPORTANT: This runs asynchronously - results will appear in the chat automatically when complete. Do NOT call this tool multiple times for the same question. Only call once per research request. If a repository is selected in the current context, you don't need to specify it. Optionally provide a Linear task ID to post results as a comment on that task.",
   inputSchema: z.object({
     repository: z
       .string()
-      .describe("Full repository name in format 'owner/repo'"),
+      .optional()
+      .describe(
+        "Full repository name in format 'owner/repo'. Optional if a repository is already selected in the chat context."
+      ),
     question: z
       .string()
       .describe("The research question to answer about the codebase"),
     depth: z
       .enum(["quick", "medium", "thorough"])
       .describe("How thorough the research should be")
-      .default("medium")
+      .default("medium"),
+    linearTaskId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional Linear task/issue ID (e.g., 'ABC-123' or UUID). If provided, research results will be posted as a comment on that task."
+      )
   }),
-  execute: async ({ repository, question, depth }) => {
+  execute: async ({ repository, question, depth, linearTaskId }) => {
     const { agent } = getCurrentAgent<Chat>();
 
+    // If no repository specified, try to get it from the chat context
+    let resolvedRepo = repository;
+    if (!resolvedRepo) {
+      const messages = agent!.messages;
+      // Look for repository context in recent messages (check last 10)
+      for (let i = messages.length - 1; i >= Math.max(0, messages.length - 10); i--) {
+        const msg = messages[i];
+        const repoContext = (msg.metadata as any)?.repository;
+        if (repoContext?.full_name) {
+          resolvedRepo = repoContext.full_name;
+          console.log(`[Research] Using repository from context: ${resolvedRepo}`);
+          break;
+        }
+      }
+    }
+
+    if (!resolvedRepo) {
+      return "No repository specified and none found in chat context. Please specify a repository in format 'owner/repo' or select one first.";
+    }
+
     console.log(
-      `[Research] Creating research workflow for ${repository}: "${question}" (depth: ${depth})`
+      `[Research] Creating research workflow for ${resolvedRepo}: "${question}" (depth: ${depth})${linearTaskId ? ` [Linear: ${linearTaskId}]` : ""}`
     );
 
     try {
       const workflowId = generateId();
 
       // Create workflow record and schedule it
-      await agent!.createResearchWorkflow(workflowId, repository, question, depth);
+      await agent!.createResearchWorkflow(
+        workflowId,
+        resolvedRepo,
+        question,
+        depth,
+        linearTaskId
+      );
 
       console.log(`[Research] Created workflow: ${workflowId}`);
 
       // Return clear message that research is happening in background
-      return `Research workflow started for ${repository}. The results will appear automatically in this chat when complete. No further action needed - please wait for the results to appear.`;
+      const linearNote = linearTaskId
+        ? ` Results will also be posted as a comment on Linear task ${linearTaskId}.`
+        : "";
+      return `Research workflow started for ${resolvedRepo}.${linearNote} The results will appear automatically in this chat when complete. No further action needed - please wait for the results to appear.`;
     } catch (error) {
       console.error("[Research] Failed to create research workflow:", error);
       return `Failed to start research: ${error}. Please check that the GitHub MCP server is connected.`;
