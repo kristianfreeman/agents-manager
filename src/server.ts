@@ -624,23 +624,100 @@ When using GitHub MCP tools, always reference this repository context.`;
         `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}`
       );
 
-      // Build the research prompt based on depth
+      // Get MCP tools - wait for them to be ready
+      let mcpTools = {};
+      const MAX_RETRIES = 10;
+      const RETRY_DELAY = 1000; // 1 second
+
+      for (let i = 0; i < MAX_RETRIES; i++) {
+        try {
+          mcpTools = this.mcp.getAITools();
+          console.log(
+            `[Research Workflow] Got MCP tools successfully (attempt ${i + 1})`
+          );
+          break;
+        } catch (error) {
+          console.log(
+            `[Research Workflow] MCP tools not ready yet (attempt ${i + 1}/${MAX_RETRIES})`
+          );
+          if (i < MAX_RETRIES - 1) {
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+          } else {
+            throw new Error(
+              "MCP tools not available after retries. Please ensure GitHub MCP server is connected."
+            );
+          }
+        }
+      }
+
+      const allTools = {
+        ...tools,
+        ...mcpTools
+      };
+
+      // Build the research prompt
       const researchPrompt = this.buildResearchPrompt(
         repository,
         question,
         depth
       );
 
-      // Add research request to conversation
+      // Create a message with the research prompt
+      const researchMessage = {
+        id: generateId(),
+        role: "user" as const,
+        parts: [
+          {
+            type: "text" as const,
+            text: researchPrompt
+          }
+        ],
+        metadata: {
+          createdAt: new Date()
+        }
+      };
+
+      // Run AI completion directly without triggering onChatMessage
+      const messages = [...this.messages, researchMessage];
+
+      console.log("[Research Workflow] Running AI completion with MCP tools...");
+
+      const result = streamText({
+        system: `You are a research assistant specialized in code exploration.
+
+${getSchedulePrompt({ date: new Date() })}
+
+Use the available GitHub MCP tools to thoroughly research the codebase.`,
+        messages: convertToModelMessages(messages),
+        model,
+        tools: allTools,
+        stopWhen: stepCountIs(10)
+      });
+
+      // Consume the stream and collect response
+      let fullResponse = "";
+      const stream = result.toUIMessageStream();
+
+      for await (const chunk of stream) {
+        if (chunk.type === "text") {
+          fullResponse += chunk.text;
+        }
+      }
+
+      console.log(
+        `[Research Workflow] AI completion finished, response length: ${fullResponse.length}`
+      );
+
+      // Save both the prompt and response to conversation
       await this.saveMessages([
-        ...this.messages,
+        ...messages,
         {
           id: generateId(),
-          role: "user",
+          role: "assistant",
           parts: [
             {
               type: "text",
-              text: researchPrompt
+              text: fullResponse
             }
           ],
           metadata: {
@@ -649,7 +726,7 @@ When using GitHub MCP tools, always reference this repository context.`;
         }
       ]);
 
-      console.log("[Research Workflow] Research request added to conversation");
+      console.log("[Research Workflow] Research completed and saved");
     } catch (error) {
       console.error("[Research Workflow] Failed to execute research:", error);
 
@@ -658,7 +735,7 @@ When using GitHub MCP tools, always reference this repository context.`;
         ...this.messages,
         {
           id: generateId(),
-          role: "user",
+          role: "assistant",
           parts: [
             {
               type: "text",
