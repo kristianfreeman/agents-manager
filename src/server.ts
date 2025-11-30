@@ -47,6 +47,35 @@ export class Chat extends AIChatAgent<Env> {
   }
 
   /**
+   * Create a new research workflow and schedule it
+   * This is called by the researchRepository tool
+   */
+  async createResearchWorkflow(
+    workflowId: string,
+    repository: string,
+    question: string,
+    depth: string
+  ): Promise<void> {
+    await this.ensureResearchWorkflowsTable();
+
+    const now = Date.now();
+    await this.sql.exec(
+      `INSERT INTO research_workflows (id, status, repository, question, depth, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      workflowId,
+      "pending",
+      repository,
+      question,
+      depth,
+      now,
+      now
+    );
+
+    // Schedule the workflow to run immediately
+    this.schedule(0, "executeResearch", workflowId);
+  }
+
+  /**
    * Handle HTTP requests for MCP server management and other agent operations
    */
   async onRequest(request: Request): Promise<Response> {

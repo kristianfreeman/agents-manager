@@ -136,25 +136,11 @@ const researchRepository = tool({
 
     try {
       const workflowId = generateId();
-      const now = Date.now();
 
-      // Create workflow record in SQLite
-      await agent!.sql.exec(
-        `INSERT INTO research_workflows (id, status, repository, question, depth, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        workflowId,
-        "pending",
-        repository,
-        question,
-        depth,
-        now,
-        now
-      );
+      // Create workflow record and schedule it
+      await agent!.createResearchWorkflow(workflowId, repository, question, depth);
 
-      console.log(`[Research] Created workflow record: ${workflowId}`);
-
-      // Schedule the workflow to run immediately
-      agent!.schedule(0, "executeResearch", workflowId);
+      console.log(`[Research] Created workflow: ${workflowId}`);
 
       return {
         success: true,
