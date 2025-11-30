@@ -51,7 +51,7 @@ export class Chat extends AIChatAgent<Env> {
 
       console.log(`[MCP] Connecting to ${name} at ${serverUrl}`);
       console.log(
-        `[MCP] Auth token provided: ${authToken ? "YES (length: " + authToken.length + ")" : "NO"}`
+        `[MCP] Auth token provided: ${authToken ? `YES (length: ${authToken.length})` : "NO"}`
       );
 
       // If authToken provided, use it in headers (for PAT-based auth)
@@ -612,6 +612,112 @@ When using GitHub MCP tools, always reference this repository context.`;
         }
       }
     ]);
+  }
+
+  async executeResearch(taskData: string, _task: Schedule<string>) {
+    console.log("[Research Workflow] Starting research workflow");
+
+    try {
+      // Parse the research task data
+      const { repository, question, depth } = JSON.parse(taskData);
+      console.log(
+        `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}`
+      );
+
+      // Build the research prompt based on depth
+      const researchPrompt = this.buildResearchPrompt(
+        repository,
+        question,
+        depth
+      );
+
+      // Add research request to conversation
+      await this.saveMessages([
+        ...this.messages,
+        {
+          id: generateId(),
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: researchPrompt
+            }
+          ],
+          metadata: {
+            createdAt: new Date()
+          }
+        }
+      ]);
+
+      console.log("[Research Workflow] Research request added to conversation");
+    } catch (error) {
+      console.error("[Research Workflow] Failed to execute research:", error);
+
+      // Add error message to conversation
+      await this.saveMessages([
+        ...this.messages,
+        {
+          id: generateId(),
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: `Research workflow failed: ${error}`
+            }
+          ],
+          metadata: {
+            createdAt: new Date()
+          }
+        }
+      ]);
+    }
+  }
+
+  /**
+   * Builds a research prompt based on the depth level
+   * The AI will use MCP tools to explore the codebase and provide insights
+   */
+  private buildResearchPrompt(
+    repository: string,
+    question: string,
+    depth: "quick" | "medium" | "thorough"
+  ): string {
+    const depthInstructions = {
+      quick: `Research the following question about ${repository} using a quick exploration:
+- Find the most relevant files and directories
+- Identify the current implementation or patterns
+- Provide a concise summary
+
+Question: ${question}
+
+Use GitHub MCP tools (search_code, get_file_contents) to explore the repository and provide your findings.`,
+
+      medium: `Research the following question about ${repository} using a moderate depth exploration:
+- Find the most relevant files and directories
+- Identify the current implementation or patterns
+- Examine dependencies and libraries used
+- Check for related tests or documentation
+- Provide a comprehensive summary with code examples
+
+Question: ${question}
+
+Use GitHub MCP tools (search_code, get_file_contents) to explore the repository. Read actual file contents and provide specific examples.`,
+
+      thorough: `Research the following question about ${repository} using a thorough exploration:
+- Find the most relevant files and directories
+- Identify the current implementation or patterns
+- Examine dependencies and libraries used
+- Check for related tests or documentation
+- Review historical context (commits, PRs) if relevant
+- Look for related issues or TODOs
+- Provide a detailed summary with code examples and architectural insights
+
+Question: ${question}
+
+Use GitHub MCP tools (search_code, get_file_contents, and others as needed) to deeply explore the repository. Read multiple files, examine patterns, and provide comprehensive analysis.`
+    };
+
+    return depthInstructions[depth];
   }
 }
 

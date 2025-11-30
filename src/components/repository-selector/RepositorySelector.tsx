@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { GithubLogo, MagnifyingGlass, X, GitBranch } from "@phosphor-icons/react";
+import {
+  GithubLogo,
+  MagnifyingGlass,
+  X,
+  GitBranch
+} from "@phosphor-icons/react";
 import { Card } from "@/components/card/Card";
 
 interface Repository {
@@ -37,7 +42,10 @@ export function RepositorySelector({
   // Click outside to close
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
@@ -53,20 +61,33 @@ export function RepositorySelector({
 
   const fetchRepositories = async () => {
     setLoading(true);
-    console.log("[RepositorySelector] Fetching repositories from /agents/chat/default/repositories");
+    console.log(
+      "[RepositorySelector] Fetching repositories from /agents/chat/default/repositories"
+    );
     try {
       const response = await fetch("/agents/chat/default/repositories");
       console.log("[RepositorySelector] Response status:", response.status);
       if (response.ok) {
         const data = (await response.json()) as Repository[];
-        console.log("[RepositorySelector] Fetched repositories:", data.length, data);
+        console.log(
+          "[RepositorySelector] Fetched repositories:",
+          data.length,
+          data
+        );
         setRepos(data);
       } else {
         const errorText = await response.text();
-        console.error("[RepositorySelector] Failed to fetch repositories:", response.status, errorText);
+        console.error(
+          "[RepositorySelector] Failed to fetch repositories:",
+          response.status,
+          errorText
+        );
       }
     } catch (error) {
-      console.error("[RepositorySelector] Failed to fetch repositories:", error);
+      console.error(
+        "[RepositorySelector] Failed to fetch repositories:",
+        error
+      );
     } finally {
       setLoading(false);
     }
@@ -92,7 +113,10 @@ export function RepositorySelector({
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-2 py-1 rounded-md text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
       >
-        <GithubLogo size={18} weight={selectedRepository ? "fill" : "regular"} />
+        <GithubLogo
+          size={18}
+          weight={selectedRepository ? "fill" : "regular"}
+        />
         <span className="text-xs">
           {selectedRepository ? selectedRepository.name : "Select a repo"}
         </span>

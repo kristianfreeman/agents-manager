@@ -31,8 +31,12 @@ export default function Task() {
         fetch("/agents/chat/default/tasks")
       ]);
 
-      const myTasks = myTasksRes.ok ? ((await myTasksRes.json()) as TaskDetails[]) : [];
-      const allTasks = allTasksRes.ok ? ((await allTasksRes.json()) as TaskDetails[]) : [];
+      const myTasks = myTasksRes.ok
+        ? ((await myTasksRes.json()) as TaskDetails[])
+        : [];
+      const allTasks = allTasksRes.ok
+        ? ((await allTasksRes.json()) as TaskDetails[])
+        : [];
 
       const allTasksList = [...myTasks, ...allTasks];
       const foundTask = allTasksList.find((t) => t.id === id);
@@ -115,7 +119,9 @@ export default function Task() {
               <p className="text-xs text-neutral-500 dark:text-neutral-500">
                 Status
               </p>
-              <p className="text-sm font-medium capitalize">{task.researchStatus}</p>
+              <p className="text-sm font-medium capitalize">
+                {task.researchStatus}
+              </p>
             </div>
             <div>
               <p className="text-xs text-neutral-500 dark:text-neutral-500">

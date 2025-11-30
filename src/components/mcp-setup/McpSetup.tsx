@@ -29,7 +29,9 @@ export function McpSetup({ agentId }: McpSetupProps) {
   }, [agentId]);
 
   const fetchServers = async () => {
-    console.log(`[UI] Fetching servers from /agents/chat/${agentId}/mcp-servers`);
+    console.log(
+      `[UI] Fetching servers from /agents/chat/${agentId}/mcp-servers`
+    );
     try {
       const response = await fetch(`/agents/chat/${agentId}/mcp-servers`);
       console.log(`[UI] Fetch servers response status: ${response.status}`);
@@ -68,7 +70,12 @@ export function McpSetup({ agentId }: McpSetupProps) {
     console.log(`[UI] name: ${name}, url: ${url}`);
 
     // Get the appropriate token for this server
-    const token = name === "GitHub" ? githubToken : name === "Linear" ? linearToken : undefined;
+    const token =
+      name === "GitHub"
+        ? githubToken
+        : name === "Linear"
+          ? linearToken
+          : undefined;
 
     console.log(`[UI] Connecting to ${name}`);
     console.log(`[UI] Token present: ${!!token}`);
@@ -82,13 +89,17 @@ export function McpSetup({ agentId }: McpSetupProps) {
     const serverList = Array.isArray(servers) ? servers : [];
     const alreadyConnected = serverList.find((s) => s.name === name);
     if (alreadyConnected) {
-      alert(`${name} is already connected! Disconnect it first if you want to reconnect.`);
+      alert(
+        `${name} is already connected! Disconnect it first if you want to reconnect.`
+      );
       return;
     }
 
     setConnecting(name);
     try {
-      console.log(`[UI] Sending request to /agents/chat/${agentId}/mcp-servers`);
+      console.log(
+        `[UI] Sending request to /agents/chat/${agentId}/mcp-servers`
+      );
       const response = await fetch(`/agents/chat/${agentId}/mcp-servers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,9 +146,12 @@ export function McpSetup({ agentId }: McpSetupProps) {
   const disconnectServer = async (serverId: string) => {
     console.log(`[UI] Disconnecting server ${serverId}`);
     try {
-      const response = await fetch(`/agents/chat/${agentId}/mcp-servers/${serverId}`, {
-        method: "DELETE"
-      });
+      const response = await fetch(
+        `/agents/chat/${agentId}/mcp-servers/${serverId}`,
+        {
+          method: "DELETE"
+        }
+      );
       console.log(`[UI] Disconnect response status: ${response.status}`);
 
       if (response.ok) {
@@ -202,61 +216,63 @@ export function McpSetup({ agentId }: McpSetupProps) {
 
           // State machine for button appearance
           type ButtonState =
-            | { type: 'disconnected' }
-            | { type: 'connecting' }
-            | { type: 'ready' }
-            | { type: 'ready-hovered' }
-            | { type: 'failed' }
-            | { type: 'in-progress' };
+            | { type: "disconnected" }
+            | { type: "connecting" }
+            | { type: "ready" }
+            | { type: "ready-hovered" }
+            | { type: "failed" }
+            | { type: "in-progress" };
 
           const getButtonState = (): ButtonState => {
-            if (isConnecting) return { type: 'connecting' };
-            if (!connected) return { type: 'disconnected' };
-            if (connected.state === 'ready' && isHovered) return { type: 'ready-hovered' };
-            if (connected.state === 'ready') return { type: 'ready' };
-            if (connected.state === 'failed') return { type: 'failed' };
-            return { type: 'in-progress' };
+            if (isConnecting) return { type: "connecting" };
+            if (!connected) return { type: "disconnected" };
+            if (connected.state === "ready" && isHovered)
+              return { type: "ready-hovered" };
+            if (connected.state === "ready") return { type: "ready" };
+            if (connected.state === "failed") return { type: "failed" };
+            return { type: "in-progress" };
           };
 
           const buttonState = getButtonState();
 
           const getButtonProps = (state: ButtonState) => {
             switch (state.type) {
-              case 'disconnected':
+              case "disconnected":
                 return {
-                  text: 'Connect',
-                  variant: 'secondary' as const,
-                  className: ''
+                  text: "Connect",
+                  variant: "secondary" as const,
+                  className: ""
                 };
-              case 'connecting':
+              case "connecting":
                 return {
-                  text: 'Connecting...',
-                  variant: 'secondary' as const,
-                  className: ''
+                  text: "Connecting...",
+                  variant: "secondary" as const,
+                  className: ""
                 };
-              case 'ready':
+              case "ready":
                 return {
-                  text: 'Ready',
-                  variant: 'secondary' as const,
-                  className: '!text-green-600 dark:!text-green-400'
+                  text: "Ready",
+                  variant: "secondary" as const,
+                  className: "!text-green-600 dark:!text-green-400"
                 };
-              case 'ready-hovered':
+              case "ready-hovered":
                 return {
-                  text: 'Disconnect',
-                  variant: 'secondary' as const,
-                  className: '!bg-red-600 hover:!bg-red-700 !text-white !border-red-600'
+                  text: "Disconnect",
+                  variant: "secondary" as const,
+                  className:
+                    "!bg-red-600 hover:!bg-red-700 !text-white !border-red-600"
                 };
-              case 'failed':
+              case "failed":
                 return {
-                  text: 'Failed',
-                  variant: 'destructive' as const,
-                  className: ''
+                  text: "Failed",
+                  variant: "destructive" as const,
+                  className: ""
                 };
-              case 'in-progress':
+              case "in-progress":
                 return {
-                  text: capitalizeState(connected?.state || 'connecting'),
-                  variant: 'secondary' as const,
-                  className: ''
+                  text: capitalizeState(connected?.state || "connecting"),
+                  variant: "secondary" as const,
+                  className: ""
                 };
             }
           };

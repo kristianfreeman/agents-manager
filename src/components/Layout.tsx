@@ -57,10 +57,11 @@ export default function Layout() {
   });
 
   // Repository state
-  const [selectedRepository, setSelectedRepository] = useState<Repository | null>(() => {
-    const savedRepo = localStorage.getItem("selectedRepository");
-    return savedRepo ? JSON.parse(savedRepo) : null;
-  });
+  const [selectedRepository, setSelectedRepository] =
+    useState<Repository | null>(() => {
+      const savedRepo = localStorage.getItem("selectedRepository");
+      return savedRepo ? JSON.parse(savedRepo) : null;
+    });
 
   // Chat state
   const [showDebug, setShowDebug] = useState(false);
@@ -73,7 +74,8 @@ export default function Layout() {
       // Use requestAnimationFrame to ensure DOM is updated before scrolling
       requestAnimationFrame(() => {
         if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+          messagesContainerRef.current.scrollTop =
+            messagesContainerRef.current.scrollHeight;
         }
       });
     }
@@ -94,7 +96,10 @@ export default function Layout() {
   // Repository effect - save to localStorage
   useEffect(() => {
     if (selectedRepository) {
-      localStorage.setItem("selectedRepository", JSON.stringify(selectedRepository));
+      localStorage.setItem(
+        "selectedRepository",
+        JSON.stringify(selectedRepository)
+      );
     } else {
       localStorage.removeItem("selectedRepository");
     }
@@ -140,9 +145,10 @@ export default function Layout() {
             ? {
                 name: selectedRepository.name,
                 full_name: selectedRepository.full_name,
-                owner: typeof selectedRepository.owner === 'string'
-                  ? selectedRepository.owner
-                  : selectedRepository.owner?.login
+                owner:
+                  typeof selectedRepository.owner === "string"
+                    ? selectedRepository.owner
+                    : selectedRepository.owner?.login
               }
             : null
         }
@@ -168,25 +174,39 @@ export default function Layout() {
   });
 
   // Wrapper to dispatch Linear update events
-  const handleToolResult = (params: { tool: string; toolCallId: string; output: unknown }) => {
+  const handleToolResult = (params: {
+    tool: string;
+    toolCallId: string;
+    output: unknown;
+  }) => {
     console.log("[Layout] Tool result received:", params.tool);
     addToolResult(params);
 
     // Check if this is a Linear tool that modifies data
     const linearModifyingTools = [
-      'issue_write',
-      'sub_issue_write',
-      'list_issues',
-      'update',
-      'create',
-      'assign'
+      "issue_write",
+      "sub_issue_write",
+      "list_issues",
+      "update",
+      "create",
+      "assign"
     ];
 
-    const isLinearTool = linearModifyingTools.some(pattern => params.tool.toLowerCase().includes(pattern));
-    console.log("[Layout] Is Linear tool?", isLinearTool, "Tool name:", params.tool);
+    const isLinearTool = linearModifyingTools.some((pattern) =>
+      params.tool.toLowerCase().includes(pattern)
+    );
+    console.log(
+      "[Layout] Is Linear tool?",
+      isLinearTool,
+      "Tool name:",
+      params.tool
+    );
 
     if (isLinearTool) {
-      console.log("[Layout] Linear tool executed, dispatching update event:", params.tool);
+      console.log(
+        "[Layout] Linear tool executed, dispatching update event:",
+        params.tool
+      );
       window.dispatchEvent(new CustomEvent("linear-updated"));
     }
   };
@@ -198,24 +218,26 @@ export default function Layout() {
     if (!latestMessage) return;
 
     latestMessage.parts?.forEach((part) => {
-      if (part.type.startsWith('tool-')) {
-        const toolName = part.type.replace('tool-', '');
-        const toolCallId = (part as any).toolCallId || '';
+      if (part.type.startsWith("tool-")) {
+        const toolName = part.type.replace("tool-", "");
+        const toolCallId = (part as any).toolCallId || "";
         const uniqueId = `${toolCallId}-${toolName}`;
 
         // Skip if already processed
         if (processedLinearTools.has(uniqueId)) return;
 
         const linearModifyingTools = [
-          'issue_write',
-          'sub_issue_write',
-          'update',
-          'create',
-          'assign'
+          "issue_write",
+          "sub_issue_write",
+          "update",
+          "create",
+          "assign"
         ];
 
-        const isLinearTool = linearModifyingTools.some(pattern => toolName.toLowerCase().includes(pattern));
-        const isCompleted = (part as any).state === 'output-available';
+        const isLinearTool = linearModifyingTools.some((pattern) =>
+          toolName.toLowerCase().includes(pattern)
+        );
+        const isCompleted = (part as any).state === "output-available";
 
         if (isLinearTool && isCompleted) {
           console.log("[Layout] Linear tool completed:", toolName);
@@ -310,7 +332,10 @@ export default function Layout() {
         {/* Chat Area (2/3) */}
         <div className="flex-[2] flex flex-col border-r border-neutral-200 dark:border-neutral-800 relative">
           {/* Messages */}
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 pb-40">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto p-4 space-y-4 pb-40"
+          >
             {agentMessages.length === 0 && (
               <div className="h-full flex items-center justify-center">
                 <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900">
@@ -318,9 +343,12 @@ export default function Layout() {
                     <div className="bg-[#F48120]/10 text-[#F48120] rounded-full p-3 inline-flex">
                       <Robot size={24} />
                     </div>
-                    <h3 className="font-semibold text-lg">Welcome to AI Chat</h3>
+                    <h3 className="font-semibold text-lg">
+                      Welcome to AI Chat
+                    </h3>
                     <p className="text-muted-foreground text-sm">
-                      Start a conversation with your AI assistant. Try asking about:
+                      Start a conversation with your AI assistant. Try asking
+                      about:
                     </p>
                     <ul className="text-sm text-left space-y-2">
                       <li className="flex items-center gap-2">
@@ -381,7 +409,9 @@ export default function Layout() {
                                         : ""
                                     } relative`}
                                   >
-                                    {part.text.startsWith("scheduled message") && (
+                                    {part.text.startsWith(
+                                      "scheduled message"
+                                    ) && (
                                       <span className="absolute -top-3 -left-2 text-base">
                                         🕒
                                       </span>

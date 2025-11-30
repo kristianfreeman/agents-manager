@@ -13,10 +13,7 @@ export class TaskManager extends Agent<Env> {
     const url = new URL(request.url);
 
     // Trigger research for a Linear task
-    if (
-      url.pathname.match(/\/research\/(.+)$/) &&
-      request.method === "POST"
-    ) {
+    if (url.pathname.match(/\/research\/(.+)$/) && request.method === "POST") {
       const taskId = url.pathname.split("/").pop()!;
       const research = await this.runResearch(taskId);
       return new Response(JSON.stringify(research, null, 2), {
