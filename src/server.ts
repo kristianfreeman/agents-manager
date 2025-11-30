@@ -683,38 +683,56 @@ When using GitHub MCP tools, always reference this repository context.`;
     depth: "quick" | "medium" | "thorough"
   ): string {
     const depthInstructions = {
-      quick: `Research the following question about ${repository} using a quick exploration:
-- Find the most relevant files and directories
-- Identify the current implementation or patterns
-- Provide a concise summary
+      quick: `Research the following question about ${repository}:
 
 Question: ${question}
 
-Use GitHub MCP tools (search_code, get_file_contents) to explore the repository and provide your findings.`,
+INSTRUCTIONS:
+1. Use search_code to find relevant files (try multiple search terms if needed)
+2. Use get_file_contents to read the most relevant files you find
+3. Provide a concise summary with specific code examples
+4. Be autonomous - don't ask the user what to do next, just explore and report findings
+5. If initial searches don't work, try alternative keywords related to the question`,
 
-      medium: `Research the following question about ${repository} using a moderate depth exploration:
-- Find the most relevant files and directories
-- Identify the current implementation or patterns
-- Examine dependencies and libraries used
-- Check for related tests or documentation
-- Provide a comprehensive summary with code examples
-
-Question: ${question}
-
-Use GitHub MCP tools (search_code, get_file_contents) to explore the repository. Read actual file contents and provide specific examples.`,
-
-      thorough: `Research the following question about ${repository} using a thorough exploration:
-- Find the most relevant files and directories
-- Identify the current implementation or patterns
-- Examine dependencies and libraries used
-- Check for related tests or documentation
-- Review historical context (commits, PRs) if relevant
-- Look for related issues or TODOs
-- Provide a detailed summary with code examples and architectural insights
+      medium: `Research the following question about ${repository}:
 
 Question: ${question}
 
-Use GitHub MCP tools (search_code, get_file_contents, and others as needed) to deeply explore the repository. Read multiple files, examine patterns, and provide comprehensive analysis.`
+INSTRUCTIONS:
+1. Search for relevant files using multiple related keywords
+2. Read actual file contents from top search results (at least 3-5 files)
+3. Look for:
+   - Main implementation files
+   - Configuration and setup code
+   - Related tests or examples
+   - Documentation (README, docs folders)
+4. Extract and show specific code examples
+5. Explain the implementation patterns you find
+6. Be thorough and autonomous - explore multiple angles without asking for guidance
+7. If initial searches fail, try broader or more specific terms`,
+
+      thorough: `Research the following question about ${repository}:
+
+Question: ${question}
+
+INSTRUCTIONS:
+1. Conduct comprehensive exploration using multiple search strategies:
+   - Direct keyword searches
+   - Related terminology searches
+   - Common file names (e.g., auth.ts, config.ts, README.md)
+2. Read 5-10 relevant files minimum, including:
+   - Core implementation files
+   - Configuration files
+   - Tests and examples
+   - Documentation
+3. Analyze:
+   - Implementation patterns and architecture
+   - Dependencies and libraries used
+   - API design and interfaces
+   - Error handling and edge cases
+4. Provide detailed code examples with explanations
+5. Work autonomously - try multiple approaches, don't ask user for next steps
+6. If you don't find direct matches, explore related areas and infer from context`
     };
 
     return depthInstructions[depth];
