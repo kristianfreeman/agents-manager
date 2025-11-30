@@ -110,11 +110,11 @@ const cancelScheduledTask = tool({
 
 /**
  * Hierarchical repository research tool
- * Uses parallel exploration and intermediate summarization to answer questions about a codebase
+ * Runs as an async background workflow - results appear in chat automatically
  */
 const researchRepository = tool({
   description:
-    "Research a codebase to answer a specific question using hierarchical exploration. Breaks down the question into sub-questions, explores each in parallel using GitHub tools, and synthesizes the results.",
+    "Start a background research workflow to explore a GitHub repository and answer questions about the codebase. IMPORTANT: This runs asynchronously - results will appear in the chat automatically when complete. Do NOT call this tool multiple times for the same question. Only call once per research request.",
   inputSchema: z.object({
     repository: z
       .string()
@@ -142,18 +142,11 @@ const researchRepository = tool({
 
       console.log(`[Research] Created workflow: ${workflowId}`);
 
-      return {
-        success: true,
-        workflowId,
-        status: "pending",
-        message: `Research workflow started (ID: ${workflowId}). Check status at /agents/chat/default/research-workflows/${workflowId}`
-      };
+      // Return clear message that research is happening in background
+      return `Research workflow started for ${repository}. The results will appear automatically in this chat when complete. No further action needed - please wait for the results to appear.`;
     } catch (error) {
       console.error("[Research] Failed to create research workflow:", error);
-      return {
-        success: false,
-        error: `Failed to create research workflow: ${error}`
-      };
+      return `Failed to start research: ${error}. Please check that the GitHub MCP server is connected.`;
     }
   }
 });

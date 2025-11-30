@@ -28,6 +28,25 @@ const model = openai("gpt-4o-2024-11-20");
  */
 export class Chat extends AIChatAgent<Env> {
   /**
+   * Ensure research_workflows table exists
+   */
+  private ensureWorkflowsTable() {
+    this.sql`
+      CREATE TABLE IF NOT EXISTS research_workflows (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        question TEXT NOT NULL,
+        depth TEXT NOT NULL,
+        results TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+  }
+
+  /**
    * Create a new research workflow and schedule it
    * This is called by the researchRepository tool
    */
@@ -37,18 +56,14 @@ export class Chat extends AIChatAgent<Env> {
     question: string,
     depth: string
   ): Promise<void> {
+    this.ensureWorkflowsTable();
     const now = Date.now();
 
-    // Store workflow in Durable Object storage
-    await this.ctx.storage.put(`workflow:${workflowId}`, {
-      id: workflowId,
-      status: "pending",
-      repository,
-      question,
-      depth,
-      created_at: now,
-      updated_at: now
-    });
+    // Store workflow using SQL tagged template literal
+    this.sql`
+      INSERT INTO research_workflows (id, status, repository, question, depth, created_at, updated_at)
+      VALUES (${workflowId}, ${"pending"}, ${repository}, ${question}, ${depth}, ${now}, ${now})
+    `;
 
     // Schedule the workflow to run immediately
     this.schedule(0, "executeResearch", workflowId);
@@ -57,29 +72,54 @@ export class Chat extends AIChatAgent<Env> {
   /**
    * Get workflow by ID
    */
-  private async getWorkflow(workflowId: string) {
-    return await this.ctx.storage.get(`workflow:${workflowId}`);
+  private getWorkflow(workflowId: string) {
+    this.ensureWorkflowsTable();
+    const rows = this.sql<{
+      id: string;
+      status: string;
+      repository: string;
+      question: string;
+      depth: string;
+      results: string | null;
+      error: string | null;
+      created_at: number;
+      updated_at: number;
+    }>`SELECT * FROM research_workflows WHERE id = ${workflowId}`;
+    return rows[0] || null;
   }
 
   /**
    * Update workflow status and results
    */
-  private async updateWorkflow(
+  private updateWorkflow(
     workflowId: string,
-    updates: Partial<{
-      status: string;
-      results: string;
-      error: string;
-      updated_at: number;
-    }>
+    updates: {
+      status?: string;
+      results?: string;
+      error?: string;
+    }
   ) {
-    const workflow = await this.getWorkflow(workflowId);
-    if (workflow) {
-      await this.ctx.storage.put(`workflow:${workflowId}`, {
-        ...workflow,
-        ...updates,
-        updated_at: Date.now()
-      });
+    this.ensureWorkflowsTable();
+    const now = Date.now();
+
+    if (updates.status !== undefined && updates.results !== undefined) {
+      this.sql`
+        UPDATE research_workflows
+        SET status = ${updates.status}, results = ${updates.results}, updated_at = ${now}
+        WHERE id = ${workflowId}
+      `;
+    } else if (updates.status !== undefined && updates.error !== undefined) {
+      this.sql`
+        UPDATE research_workflows
+        SET status = ${updates.status}, error = ${updates.error}, updated_at = ${now}
+        WHERE id = ${workflowId}
+      `;
+    } else if (updates.status !== undefined) {
+      this.sql`
+        UPDATE research_workflows
+        SET status = ${updates.status}, updated_at = ${now}
+        WHERE id = ${workflowId}
+      `;
     }
   }
 
@@ -114,18 +154,20 @@ export class Chat extends AIChatAgent<Env> {
       url.pathname.endsWith("/research-workflows") &&
       request.method === "GET"
     ) {
-      // Get all workflow keys from storage
-      const allKeys = await this.ctx.storage.list({ prefix: "workflow:" });
-      const workflows = [];
+      this.ensureWorkflowsTable();
+      const workflows = this.sql<{
+        id: string;
+        status: string;
+        repository: string;
+        question: string;
+        depth: string;
+        results: string | null;
+        error: string | null;
+        created_at: number;
+        updated_at: number;
+      }>`SELECT * FROM research_workflows ORDER BY created_at DESC LIMIT 50`;
 
-      for (const [_, workflow] of allKeys) {
-        workflows.push(workflow);
-      }
-
-      // Sort by created_at descending
-      workflows.sort((a: any, b: any) => b.created_at - a.created_at);
-
-      return new Response(JSON.stringify(workflows.slice(0, 50)), {
+      return new Response(JSON.stringify(workflows), {
         headers: { "Content-Type": "application/json" }
       });
     }
@@ -716,60 +758,141 @@ When using GitHub MCP tools, always reference this repository context.`;
       `[Research Workflow] Starting research workflow: ${workflowId}`
     );
 
-    try {
-      // Get workflow details from storage
-      const workflow = (await this.getWorkflow(workflowId)) as any;
+    // Get workflow details from storage first (outside try so they're accessible in catch)
+    const workflow = this.getWorkflow(workflowId);
 
-      if (!workflow) {
-        console.error(`[Research Workflow] Workflow not found: ${workflowId}`);
-        return;
+    if (!workflow) {
+      console.error(`[Research Workflow] Workflow not found: ${workflowId}`);
+      return;
+    }
+
+    const { repository, question, depth: depthStr } = workflow;
+    const depth = depthStr as "quick" | "medium" | "thorough";
+
+    console.log(
+      `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}`
+    );
+
+    try {
+      // Update status to in_progress
+      this.updateWorkflow(workflowId, { status: "in_progress" });
+
+      // Wait for MCP servers to be ready
+      // In scheduled tasks, connections are restored in background and may not be ready immediately
+      const MAX_RETRIES = 30;
+      const RETRY_DELAY = 1000; // 1 second
+      let mcpTools = {};
+
+      // Ensure jsonSchema is loaded (required for getAITools to work)
+      // This is normally done during connect() but not during restoreConnectionsFromStorage()
+      if (typeof (this.mcp as any).ensureJsonSchema === "function") {
+        await (this.mcp as any).ensureJsonSchema();
+        console.log("[Research Workflow] jsonSchema initialized");
       }
 
-      const { repository, question, depth } = workflow as {
-        repository: string;
-        question: string;
-        depth: "quick" | "medium" | "thorough";
-      };
-
-      console.log(
-        `[Research Workflow] Repository: ${repository}, Question: "${question}", Depth: ${depth}`
-      );
-
-      // Update status to in_progress
-      await this.updateWorkflow(workflowId, { status: "in_progress" });
-
-      // Get MCP tools - wait for them to be ready
-      let mcpTools = {};
-      const MAX_RETRIES = 10;
-      const RETRY_DELAY = 1000; // 1 second
-
       for (let i = 0; i < MAX_RETRIES; i++) {
+        const mcpState = this.getMcpServers();
+        const servers = (mcpState as any).servers || {};
+        const serverEntries = Object.entries(servers);
+
+        // Check if we have any servers at all
+        if (serverEntries.length === 0) {
+          console.log(
+            `[Research Workflow] No MCP servers registered (attempt ${i + 1}/${MAX_RETRIES})`
+          );
+          if (i < MAX_RETRIES - 1) {
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+            continue;
+          }
+          throw new Error(
+            "No MCP servers available. Please connect GitHub MCP server first."
+          );
+        }
+
+        // Check server states
+        const serverStates = serverEntries.map(([id, s]: [string, any]) => ({
+          id,
+          name: s.name,
+          state: s.state
+        }));
+        console.log(
+          `[Research Workflow] Server states (attempt ${i + 1}):`,
+          JSON.stringify(serverStates)
+        );
+
+        // Check if GitHub server is ready
+        const githubServer = serverEntries.find(
+          ([_, s]: [string, any]) => s.name === "GitHub"
+        );
+        if (!githubServer) {
+          console.log(
+            `[Research Workflow] GitHub server not found (attempt ${i + 1}/${MAX_RETRIES})`
+          );
+          if (i < MAX_RETRIES - 1) {
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+            continue;
+          }
+          throw new Error(
+            "GitHub MCP server not connected. Please connect it first."
+          );
+        }
+
+        const githubState = (githubServer[1] as any).state;
+        if (githubState !== "ready") {
+          console.log(
+            `[Research Workflow] GitHub server not ready yet: ${githubState} (attempt ${i + 1}/${MAX_RETRIES})`
+          );
+          if (i < MAX_RETRIES - 1) {
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+            continue;
+          }
+          throw new Error(
+            `GitHub MCP server not ready after ${MAX_RETRIES} attempts. Current state: ${githubState}`
+          );
+        }
+
+        // Server is ready, try to get tools
         try {
           mcpTools = this.mcp.getAITools();
+          const toolCount = Object.keys(mcpTools).length;
           console.log(
-            `[Research Workflow] Got MCP tools successfully (attempt ${i + 1})`
+            `[Research Workflow] Got ${toolCount} MCP tools successfully`
           );
           break;
         } catch (error) {
           console.log(
-            `[Research Workflow] MCP tools not ready yet (attempt ${i + 1}/${MAX_RETRIES})`
+            `[Research Workflow] Error getting tools despite ready state: ${error}`
           );
           if (i < MAX_RETRIES - 1) {
             await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
-          } else {
-            throw new Error(
-              "MCP tools not available after retries. Please ensure GitHub MCP server is connected."
-            );
+            continue;
           }
+          throw new Error(
+            `Failed to get MCP tools: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
 
-      // Exclude researchRepository from tools to prevent recursive calls
-      const { researchRepository, ...localToolsWithoutResearch } = tools;
-      const allTools = {
-        ...localToolsWithoutResearch,
-        ...mcpTools
-      };
+      // Filter to only essential GitHub tools to reduce context size
+      // Each tool schema adds tokens - 63 tools is too many
+      const essentialToolPatterns = [
+        "search_code",
+        "get_file_contents",
+        "search_repositories",
+        "list_commits",
+        "get_commit"
+      ];
+
+      const filteredMcpTools: Record<string, any> = {};
+      for (const [toolName, tool] of Object.entries(mcpTools)) {
+        if (essentialToolPatterns.some((pattern) => toolName.includes(pattern))) {
+          filteredMcpTools[toolName] = tool;
+        }
+      }
+
+      console.log(
+        `[Research Workflow] Using ${Object.keys(filteredMcpTools).length} filtered tools (from ${Object.keys(mcpTools).length} total)`
+      );
 
       // Build the research prompt
       const researchPrompt = this.buildResearchPrompt(
@@ -778,23 +901,22 @@ When using GitHub MCP tools, always reference this repository context.`;
         depth
       );
 
-      // Create a message with the research prompt
-      const researchMessage = {
-        id: generateId(),
-        role: "user" as const,
-        parts: [
-          {
-            type: "text" as const,
-            text: researchPrompt
+      // Create a standalone message for research (don't include chat history to avoid context limits)
+      const researchMessages = [
+        {
+          id: generateId(),
+          role: "user" as const,
+          parts: [
+            {
+              type: "text" as const,
+              text: researchPrompt
+            }
+          ],
+          metadata: {
+            createdAt: new Date()
           }
-        ],
-        metadata: {
-          createdAt: new Date()
         }
-      };
-
-      // Run AI completion directly without triggering onChatMessage
-      const messages = [...this.messages, researchMessage];
+      ];
 
       console.log(
         "[Research Workflow] Running AI completion with MCP tools..."
@@ -802,60 +924,92 @@ When using GitHub MCP tools, always reference this repository context.`;
 
       const result = streamText({
         system: `You are a research assistant specialized in code exploration.
+Your task is to research the repository "${repository}" and answer questions about it.
 
-${getSchedulePrompt({ date: new Date() })}
+Use the available GitHub MCP tools to thoroughly research the codebase:
+- Use search_code to find relevant files
+- Use get_file_contents to read file contents
+- Provide detailed findings with code examples
 
-Use the available GitHub MCP tools to thoroughly research the codebase.`,
-        messages: convertToModelMessages(messages),
+Be thorough and provide a comprehensive answer.`,
+        messages: convertToModelMessages(researchMessages),
         model,
-        tools: allTools,
-        stopWhen: stepCountIs(10)
+        tools: filteredMcpTools,
+        stopWhen: stepCountIs(15)
       });
 
-      // Consume the stream and collect response
-      let fullResponse = "";
-      const responseParts: Array<{
-        type: string;
-        text?: string;
-        toolName?: string;
-      }> = [];
-      const stream = result.toUIMessageStream();
-
-      for await (const chunk of stream) {
-        console.log(`[Research Workflow] Stream chunk type: ${chunk.type}`);
-
-        if (chunk.type === "text") {
-          fullResponse += chunk.text;
-          responseParts.push({ type: "text", text: chunk.text });
-        } else if (chunk.type === "tool-call") {
-          console.log(`[Research Workflow] Tool call: ${chunk.toolName}`);
-          responseParts.push({ type: "tool-call", toolName: chunk.toolName });
-        } else if (chunk.type === "tool-result") {
-          console.log(
-            `[Research Workflow] Tool result: ${JSON.stringify(chunk).slice(0, 200)}`
-          );
-        }
-      }
+      // Wait for the stream to complete and get final text
+      const fullResponse = await result.text;
+      const steps = await result.steps;
 
       console.log(
-        `[Research Workflow] AI completion finished, response length: ${fullResponse.length}, parts: ${responseParts.length}`
+        `[Research Workflow] AI completion finished, response length: ${fullResponse.length}, steps: ${steps.length}`
       );
 
+      // Check if we got a meaningful response
+      if (!fullResponse || fullResponse.length < 50) {
+        throw new Error(
+          `Research produced insufficient results (${fullResponse.length} chars). The AI may have encountered an error.`
+        );
+      }
+
       // Save results to workflow
-      await this.updateWorkflow(workflowId, {
+      this.updateWorkflow(workflowId, {
         status: "completed",
-        results: fullResponse || "No response generated"
+        results: fullResponse
       });
+
+      // Add result message to chat so user sees it
+      await this.saveMessages([
+        ...this.messages,
+        {
+          id: generateId(),
+          role: "assistant",
+          parts: [
+            {
+              type: "text",
+              text: `## Research Results: ${repository}\n\n**Question:** ${question}\n\n${fullResponse}`
+            }
+          ],
+          metadata: {
+            createdAt: new Date(),
+            workflowId
+          }
+        }
+      ]);
 
       console.log("[Research Workflow] Research completed and saved");
     } catch (error) {
       console.error("[Research Workflow] Failed to execute research:", error);
 
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
       // Save error to workflow
-      await this.updateWorkflow(workflowId, {
+      this.updateWorkflow(workflowId, {
         status: "failed",
-        error: String(error)
+        error: errorMessage
       });
+
+      // Add error message to chat so user sees it
+      await this.saveMessages([
+        ...this.messages,
+        {
+          id: generateId(),
+          role: "assistant",
+          parts: [
+            {
+              type: "text",
+              text: `## Research Failed: ${repository}\n\n**Question:** ${question}\n\n**Error:** ${errorMessage}\n\nPlease try again or check if the GitHub MCP server is properly connected.`
+            }
+          ],
+          metadata: {
+            createdAt: new Date(),
+            workflowId,
+            isError: true
+          }
+        }
+      ]);
     }
   }
 
