@@ -27,7 +27,8 @@ import {
   Stop,
   Robot,
   Gear,
-  Kanban
+  Kanban,
+  Lightning
 } from "@phosphor-icons/react";
 
 interface Repository {
@@ -362,7 +363,7 @@ export default function Layout() {
                 <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900">
                   <div className="text-center space-y-4">
                     <div className="bg-[#F48120]/10 text-[#F48120] rounded-full p-3 inline-flex">
-                      <Robot size={24} />
+                      <Lightning size={24} weight="fill" />
                     </div>
                     <h3 className="font-semibold text-lg">
                       Agents Manager
