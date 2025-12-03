@@ -208,9 +208,66 @@ export const tools = {
  * This object contains the actual logic for tools that need human approval
  * Each function here corresponds to a tool above that doesn't have an execute function
  */
-export const executions = {
+export const executions: Record<string, (input: any, context?: any) => Promise<any>> = {
   getWeatherInformation: async ({ city }: { city: string }) => {
     console.log(`Getting weather information for ${city}`);
     return `The weather in ${city} is sunny`;
   }
 };
+
+/**
+ * MCP tool patterns that require human confirmation before execution
+ * These patterns are matched against the tool name (after removing the MCP prefix)
+ * e.g., "update_issue" matches "tool_ABC123_update_issue"
+ */
+export const mcpToolsRequiringConfirmation = [
+  "update_issue",
+  "create_issue",
+  "delete_issue",
+  "create_comment",
+  "update_comment",
+  "delete_comment",
+  "assign_issue"
+];
+
+/**
+ * Check if an MCP tool name matches a confirmation-required pattern
+ */
+export function mcpToolRequiresConfirmation(toolName: string): boolean {
+  return mcpToolsRequiringConfirmation.some((pattern) =>
+    toolName.toLowerCase().includes(pattern.toLowerCase())
+  );
+}
+
+/**
+ * Wrap MCP tools to support human-in-the-loop confirmation
+ * Tools matching confirmation patterns will have their execute function removed
+ * and stored separately for later execution after user approval
+ */
+export function wrapMcpToolsForConfirmation(
+  mcpTools: Record<string, any>
+): Record<string, any> {
+  const wrappedTools: Record<string, any> = {};
+
+  for (const [toolName, tool] of Object.entries(mcpTools)) {
+    if (mcpToolRequiresConfirmation(toolName)) {
+      // Store the original execute function in executions
+      if (tool.execute) {
+        executions[toolName] = async (input: any) => {
+          return await tool.execute(input);
+        };
+      }
+
+      // Create a new tool without execute (requires confirmation)
+      wrappedTools[toolName] = {
+        ...tool,
+        execute: undefined
+      };
+    } else {
+      // Tool doesn't require confirmation, keep as-is
+      wrappedTools[toolName] = tool;
+    }
+  }
+
+  return wrappedTools;
+}

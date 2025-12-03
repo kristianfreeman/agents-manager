@@ -13,7 +13,7 @@ import {
 } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { processToolCalls, cleanupMessages } from "./utils";
-import { tools, executions } from "./tools";
+import { tools, executions, wrapMcpToolsForConfirmation } from "./tools";
 // import { env } from "cloudflare:workers";
 
 const model = openai("gpt-4o-2024-11-20");
@@ -414,6 +414,121 @@ export class Chat extends AIChatAgent<Env> {
       }
     }
 
+    // Get a single task/issue with full details including comments
+    const taskDetailMatch = url.pathname.match(/\/tasks\/([^/]+)$/);
+    if (taskDetailMatch && request.method === "GET") {
+      const taskId = taskDetailMatch[1];
+      try {
+        const mcpState = this.getMcpServers();
+        const servers = mcpState.servers || {};
+        const linearServerEntry = Object.entries(servers).find(
+          ([_id, s]: [string, any]) => s.name === "Linear"
+        );
+
+        if (!linearServerEntry) {
+          return new Response(
+            JSON.stringify({ error: "Linear server not connected" }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        const [linearServerId, linearServer] = linearServerEntry;
+        if ((linearServer as any).state !== "ready") {
+          return new Response(
+            JSON.stringify({ error: "Linear server not ready" }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        const tools = this.mcp.getAITools();
+        const toolNames = Object.keys(tools);
+        console.log("[Linear] Available tools for task detail:", toolNames.filter(n => n.includes(linearServerId)));
+
+        // Find the list_issues tool (Linear MCP doesn't have get_issue)
+        const listIssuesTool = toolNames.find((name) =>
+          name.includes(`tool_${linearServerId}_list_issues`)
+        );
+
+        if (!listIssuesTool) {
+          console.error("[Linear] No list_issues tool found");
+          return new Response(
+            JSON.stringify({ error: "list_issues tool not available" }),
+            { status: 500, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        // Get the issue by ID using list_issues with filter
+        const tool = tools[listIssuesTool];
+        const result = await tool.execute({ filter: { id: { eq: taskId } } });
+
+        let issue = null;
+        if ((result as any).content && Array.isArray((result as any).content)) {
+          const textContent = (result as any).content.find(
+            (c: any) => c.type === "text"
+          );
+          if (textContent && textContent.text) {
+            try {
+              const issues = JSON.parse(textContent.text);
+              issue = issues[0] || null;
+            } catch (e) {
+              console.error("[Linear] Failed to parse issue JSON:", e);
+            }
+          }
+        }
+
+        if (!issue) {
+          return new Response(
+            JSON.stringify({ error: "Issue not found" }),
+            { status: 404, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        // Try to get comments for this issue
+        const listCommentsTool = toolNames.find((name) =>
+          name.includes(`tool_${linearServerId}_list_comments`)
+        );
+
+        let comments: any[] = [];
+        if (listCommentsTool) {
+          try {
+            const commentsResult = await tools[listCommentsTool].execute({
+              issueId: taskId
+            });
+            if (
+              (commentsResult as any).content &&
+              Array.isArray((commentsResult as any).content)
+            ) {
+              const textContent = (commentsResult as any).content.find(
+                (c: any) => c.type === "text"
+              );
+              if (textContent && textContent.text) {
+                comments = JSON.parse(textContent.text);
+              }
+            }
+          } catch (e) {
+            console.error("[Linear] Failed to fetch comments:", e);
+          }
+        }
+
+        // Return full issue with comments
+        return new Response(
+          JSON.stringify({
+            ...issue,
+            comments
+          }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("[Linear] Failed to fetch task details:", error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to fetch task details",
+            details: error instanceof Error ? error.message : String(error)
+          }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Get repositories from GitHub MCP
     if (url.pathname.endsWith("/repositories") && request.method === "GET") {
       try {
@@ -676,9 +791,11 @@ export class Chat extends AIChatAgent<Env> {
   ) {
     // Collect all tools, including MCP tools
     // Safely get MCP tools, handling the case where MCP servers are still initializing
-    let mcpTools = {};
+    let mcpTools: Record<string, any> = {};
     try {
-      mcpTools = this.mcp.getAITools();
+      const rawMcpTools = this.mcp.getAITools();
+      // Wrap MCP tools to support human-in-the-loop confirmation
+      mcpTools = wrapMcpToolsForConfirmation(rawMcpTools);
     } catch (error) {
       console.warn("[Chat] MCP tools not yet available:", error);
     }

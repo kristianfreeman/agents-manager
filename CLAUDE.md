@@ -88,8 +88,8 @@ wrangler secret bulk .dev.vars
   - Tools with `execute` function: Auto-execute without confirmation
   - Tools without `execute` function: Require human-in-the-loop confirmation
   - Confirmation implementations go in `executions` object
-  - `toolsRequiringConfirmation` in `app.tsx` must match tools without `execute`
-  - Built-in tools: scheduling (`scheduleTask`), task management (`getScheduledTasks`, `cancelScheduledTask`)
+  - MCP tools can also require confirmation via `mcpToolsRequiringConfirmation` patterns
+  - Built-in tools: scheduling (`scheduleTask`), task management (`getScheduledTasks`, `cancelScheduledTask`), research (`researchRepository`)
 
 **Frontend (React + React Router)**
 
@@ -184,7 +184,20 @@ Adding new tools to `tools.ts`:
    };
    ```
 
-3. Update `toolsRequiringConfirmation` array in `app.tsx` to match tools without `execute`
+3. Update `localToolsRequiringConfirmation` array in `Layout.tsx` and `Chat.tsx` to match tools without `execute`
+
+4. **MCP tool confirmation** (for external MCP server tools):
+
+   ```typescript
+   // In tools.ts - add pattern to mcpToolsRequiringConfirmation
+   export const mcpToolsRequiringConfirmation = [
+     "update_issue",
+     "create_issue",
+     // add more patterns...
+   ];
+   ```
+
+   Also update `mcpToolsRequiringConfirmation` in `Layout.tsx` and `Chat.tsx` to match
 
 ### MCP Integration
 
@@ -270,6 +283,8 @@ Three routing patterns supported:
 - The project uses the `agents` SDK (v0.2.24+) - refer to Cloudflare Agents documentation
 - AI model: OpenAI GPT-4o (configurable in `server.ts`)
 - Vercel AI SDK (`ai` package) provides tool and streaming utilities
-- Human-in-the-loop confirmations are handled client-side in `app.tsx`
+- Human-in-the-loop confirmations are handled client-side in `Layout.tsx` and `Chat.tsx`
 - Task scheduling supports: delays (seconds), specific dates, and cron patterns
 - All scheduled tasks call the `executeTask()` method on the agent
+- Durable Object SQLite storage uses tagged template literals: `this.sql\`SELECT * FROM table\`` (not `.exec()`)
+- Research workflows store state in `research_workflows` table and run asynchronously via `this.schedule()`

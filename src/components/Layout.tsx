@@ -41,10 +41,33 @@ interface Repository {
   private: boolean;
 }
 
-// List of tools that require human confirmation
-const toolsRequiringConfirmation: (keyof typeof tools)[] = [
+// List of local tools that require human confirmation
+const localToolsRequiringConfirmation: (keyof typeof tools)[] = [
   "getWeatherInformation"
 ];
+
+// MCP tool patterns that require human confirmation
+const mcpToolsRequiringConfirmation = [
+  "update_issue",
+  "create_issue",
+  "delete_issue",
+  "create_comment",
+  "update_comment",
+  "delete_comment",
+  "assign_issue"
+];
+
+// Check if a tool requires confirmation (works for both local and MCP tools)
+function toolRequiresConfirmation(toolName: string): boolean {
+  // Check local tools
+  if (localToolsRequiringConfirmation.includes(toolName as keyof typeof tools)) {
+    return true;
+  }
+  // Check MCP tool patterns
+  return mcpToolsRequiringConfirmation.some((pattern) =>
+    toolName.toLowerCase().includes(pattern.toLowerCase())
+  );
+}
 
 // Track processed Linear tool completions to avoid duplicate events
 const processedLinearTools = new Set<string>();
@@ -264,9 +287,7 @@ export default function Layout() {
       (part) =>
         isToolUIPart(part) &&
         part.state === "input-available" &&
-        toolsRequiringConfirmation.includes(
-          part.type.replace("tool-", "") as keyof typeof tools
-        )
+        toolRequiresConfirmation(part.type.replace("tool-", ""))
     )
   );
 
@@ -344,20 +365,23 @@ export default function Layout() {
                       <Robot size={24} />
                     </div>
                     <h3 className="font-semibold text-lg">
-                      Welcome to AI Chat
+                      Agents Manager
                     </h3>
                     <p className="text-muted-foreground text-sm">
-                      Start a conversation with your AI assistant. Try asking
-                      about:
+                      Your AI assistant for task management and code research.
                     </p>
                     <ul className="text-sm text-left space-y-2">
                       <li className="flex items-center gap-2">
                         <span className="text-[#F48120]">•</span>
-                        <span>Weather information for any city</span>
+                        <span>Ask questions about your Linear tasks</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <span className="text-[#F48120]">•</span>
-                        <span>Local time in different locations</span>
+                        <span>Research codebases to find relevant context</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#F48120]">•</span>
+                        <span>Update issues, add comments, and more</span>
                       </li>
                     </ul>
                   </div>
@@ -443,9 +467,7 @@ export default function Layout() {
                               const toolCallId = part.toolCallId;
                               const toolName = part.type.replace("tool-", "");
                               const needsConfirmation =
-                                toolsRequiringConfirmation.includes(
-                                  toolName as keyof typeof tools
-                                );
+                                toolRequiresConfirmation(toolName);
 
                               return (
                                 <ToolInvocationCard

@@ -72,6 +72,27 @@ export function ToolInvocationCard({
         )}
       </button>
 
+      {/* Confirmation buttons - always visible when needed */}
+      {needsConfirmation && toolUIPart.state === "input-available" && (
+        <div className="flex gap-2 justify-end mt-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onSubmit({ toolCallId, result: APPROVAL.NO })}
+          >
+            Reject
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => onSubmit({ toolCallId, result: APPROVAL.YES })}
+          >
+            Approve
+          </Button>
+        </div>
+      )}
+
+      {/* Debug info - only visible in debug mode */}
       {showDebug && (
         <div
           className={`transition-all duration-200 ${isExpanded ? "max-h-[200px] opacity-100 mt-3" : "max-h-0 opacity-0 overflow-hidden"}`}
@@ -88,25 +109,6 @@ export function ToolInvocationCard({
                 {JSON.stringify(toolUIPart.input, null, 2)}
               </pre>
             </div>
-
-            {needsConfirmation && toolUIPart.state === "input-available" && (
-              <div className="flex gap-2 justify-end">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => onSubmit({ toolCallId, result: APPROVAL.NO })}
-                >
-                  Reject
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => onSubmit({ toolCallId, result: APPROVAL.YES })}
-                >
-                  Approve
-                </Button>
-              </div>
-            )}
 
             {!needsConfirmation && toolUIPart.state === "output-available" && (
               <div className="mt-3 border-t border-[#F48120]/10 pt-3">
